@@ -1,0 +1,2 @@
+[console_scripts]
+parametric-lattice = core.core:main

@@ -1,0 +1,274 @@
+{
+    "nodes": [
+        {
+            "id": 0,
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "boundary": [
+                -1,
+                -1,
+                -1
+            ]
+        },
+        {
+            "id": 1,
+            "position": [
+                1,
+                0,
+                0
+            ],
+            "boundary": [
+                1,
+                -1,
+                -1
+            ]
+        },
+        {
+            "id": 2,
+            "position": [
+                0,
+                1,
+                0
+            ],
+            "boundary": [
+                -1,
+                1,
+                -1
+            ]
+        },
+        {
+            "id": 3,
+            "position": [
+                1,
+                1,
+                0
+            ],
+            "boundary": [
+                1,
+                1,
+                -1
+            ]
+        },
+        {
+            "id": 4,
+            "position": [
+                0.5,
+                0.5,
+                0.5
+            ],
+            "boundary": [
+                0,
+                0,
+                0
+            ]
+        },
+        {
+            "id": 5,
+            "position": [
+                0,
+                0,
+                1
+            ],
+            "boundary": [
+                -1,
+                -1,
+                1
+            ]
+        },
+        {
+            "id": 6,
+            "position": [
+                1,
+                0,
+                1
+            ],
+            "boundary": [
+                1,
+                -1,
+                1
+            ]
+        },
+        {
+            "id": 7,
+            "position": [
+                0,
+                1,
+                1
+            ],
+            "boundary": [
+                -1,
+                1,
+                1
+            ]
+        },
+        {
+            "id": 8,
+            "position": [
+                1,
+                1,
+                1
+            ],
+            "boundary": [
+                1,
+                1,
+                1
+            ]
+        }
+    ],
+    "beam_types": [
+        {
+            "id": 0,
+            "section_type": "CSolid",
+            "radius": 0.1
+        }
+    ],
+    "edges": [
+        {
+            "id": 0,
+            "node0_id": 0,
+            "node1_id": 4,
+            "normal": [
+                0,
+                1,
+                0
+            ],
+            "beam_type_id": 0,
+            "section_ratio": 1
+        },
+        {
+            "id": 1,
+            "node0_id": 0,
+            "node1_id": 5,
+            "normal": [
+                1,
+                0,
+                0
+            ],
+            "beam_type_id": 0,
+            "section_ratio": 0.25
+        },
+        {
+            "id": 2,
+            "node0_id": 1,
+            "node1_id": 4,
+            "normal": [
+                0,
+                1,
+                0
+            ],
+            "beam_type_id": 0,
+            "section_ratio": 1
+        },
+        {
+            "id": 3,
+            "node0_id": 1,
+            "node1_id": 6,
+            "normal": [
+                1,
+                0,
+                0
+            ],
+            "beam_type_id": 0,
+            "section_ratio": 0.25
+        },
+        {
+            "id": 4,
+            "node0_id": 2,
+            "node1_id": 4,
+            "normal": [
+                0,
+                1,
+                0
+            ],
+            "beam_type_id": 0,
+            "section_ratio": 1
+        },
+        {
+            "id": 5,
+            "node0_id": 2,
+            "node1_id": 7,
+            "normal": [
+                1,
+                0,
+                0
+            ],
+            "beam_type_id": 0,
+            "section_ratio": 0.25
+        },
+        {
+            "id": 6,
+            "node0_id": 3,
+            "node1_id": 4,
+            "normal": [
+                0,
+                1,
+                0
+            ],
+            "beam_type_id": 0,
+            "section_ratio": 1
+        },
+        {
+            "id": 7,
+            "node0_id": 3,
+            "node1_id": 8,
+            "normal": [
+                1,
+                0,
+                0
+            ],
+            "beam_type_id": 0,
+            "section_ratio": 0.25
+        },
+        {
+            "id": 8,
+            "node0_id": 4,
+            "node1_id": 5,
+            "normal": [
+                0,
+                1,
+                0
+            ],
+            "beam_type_id": 0,
+            "section_ratio": 1
+        },
+        {
+            "id": 9,
+            "node0_id": 4,
+            "node1_id": 6,
+            "normal": [
+                0,
+                1,
+                0
+            ],
+            "beam_type_id": 0,
+            "section_ratio": 1
+        },
+        {
+            "id": 10,
+            "node0_id": 4,
+            "node1_id": 7,
+            "normal": [
+                0,
+                1,
+                0
+            ],
+            "beam_type_id": 0,
+            "section_ratio": 1
+        },
+        {
+            "id": 11,
+            "node0_id": 4,
+            "node1_id": 8,
+            "normal": [
+                0,
+                1,
+                0
+            ],
+            "beam_type_id": 0,
+            "section_ratio": 1
+        }
+    ]
+}

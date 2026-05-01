@@ -1,0 +1,8 @@
+core
+custom_io
+geometry
+meshing
+preprocess
+results
+setup
+solve

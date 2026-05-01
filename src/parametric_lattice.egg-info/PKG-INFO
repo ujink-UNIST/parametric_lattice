@@ -1,0 +1,21 @@
+Metadata-Version: 2.4
+Name: parametric-lattice
+Version: 0.1.0
+Summary: Parametric lattice simulation helpers for MAPDL-based workflows.
+Author: Parametric Lattice Contributors
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=2.4.4
+Requires-Dist: jaxtyping>=0.2.0
+Provides-Extra: excel
+Requires-Dist: xlwings>=0.30; extra == "excel"
+Provides-Extra: viz
+Requires-Dist: plotly>=5.0; extra == "viz"
+Provides-Extra: ansys
+Requires-Dist: ansys-mapdl-core>=0.71; extra == "ansys"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Provides-Extra: all
+Requires-Dist: xlwings>=0.30; extra == "all"
+Requires-Dist: plotly>=6.7.0; extra == "all"
+Requires-Dist: ansys-mapdl-core>=0.71; extra == "all"
