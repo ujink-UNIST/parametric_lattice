@@ -12,4 +12,3 @@ from fractions import Fraction
 @dataclass(frozen=True)
 class ResultsParams:
     value: tuple[str, ...]
-    scale_factors: tuple[Fraction, ...]

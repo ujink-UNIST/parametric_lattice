@@ -24,10 +24,7 @@ def sort_edges(
         set(_edge_points(edges)), key=_node_sort_key
     )
     beams = sorted(
-        set(
-            (edge.section_type, edge.radius)
-            for edge in edges
-        )
+        {(edge.section_type, edge.radius) for edge in edges}
     )
     node_ids = {
         point: idx for idx, point in enumerate(points)

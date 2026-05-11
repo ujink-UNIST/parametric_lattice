@@ -1,6 +1,7 @@
 from dataclasses import fields, is_dataclass
 from typing import (
     Any,
+    Dict,
     List,
     Protocol,
     Tuple,
@@ -10,19 +11,24 @@ from typing import (
 )
 
 import xlwings as xw
+import numpy as np
 from xlwings.main import Table
 
-from core.parameters.geometry_params import (
-    build_geometry_params,
+from core.parameters.element_type_params import (
+    ElementTypeParams,
 )
-from core.parameters.material_params import (
-    build_material_params,
+from core.parameters.geometry_params import GeometryParams
+from core.parameters.material_params import MaterialParams
+from core.parameters.meshing_params import MeshingParams
+from core.parameters.profile_params import BeamProfileParams
+from core.parameters.setup_params import SetupParams
+from core.parameters.sim_case import (
+    PostMeshSpec,
+    PreMeshSpec,
+    SimCase,
 )
-from core.parameters.meshing_params import (
-    build_meshing_params,
-)
-from core.parameters.setup_params import build_setup_params
-from core.parameters.sim_case import SimCase
+from custom_io.apdl_io import mapdl_session, run_commands
+from pipeline import build_pipeline
 
 _INPUT_TABLE = "t_input"
 _OUTPUT_TABLE = "t_output"
@@ -60,10 +66,13 @@ def run_all(
     inputs: Tuple[SimCase, ...] = _get_simulation_cases(
         input_header, input_body
     )
-
-
-def clear_workbook_results(book: xw.Book):
-    return
+    try:
+        with mapdl_session() as mapdl:
+            pipeline = build_pipeline(inputs[0])
+            run_commands(mapdl, pipeline)
+    except Exception as e:
+        print(f"Error: {e}")
+        raise
 
 
 def _find_table(
@@ -106,24 +115,71 @@ def _get_simulation_cases(
     input_header: Header,
     input_body: Body,
 ) -> Tuple[SimCase, ...]:
-    col_idx = {
-        name: i for i, name in enumerate(input_header)
-    }
+    cases: List[SimCase] = []
 
-    for row_idx, row in enumerate(input_body):
+    for i, row in enumerate(input_body):
+        row_values = _map_header_to_row_values(
+            input_header, row
+        )
+
         cases.append(
             SimCase(
-                row_idx=row_idx,
-                material_params=build_params(
-                    input_header, row
+                row_idx=i,
+                pre_mesh_spec=PreMeshSpec(
+                    element_type=ElementTypeParams(
+                        model=row_values["Element Type"]
+                    ),
+                    profile=BeamProfileParams(
+                        radius=row_values[
+                            "Radius Multiplier"
+                        ],
+                        kappa=row_values["Kappa"],
+                    ),
+                    geometry=GeometryParams(
+                        cell_name=row_values["Cell Name"],
+                        size=np.array(
+                            [
+                                row_values["Cell Size X"],
+                                row_values["Cell Size Y"],
+                                row_values["Cell Size Z"],
+                            ],
+                            dtype=float,
+                        ),
+                    ),
+                    meshing=MeshingParams(
+                        max_element_size=row_values[
+                            "Max Element Size"
+                        ]
+                    ),
                 ),
-                geometry_params=build_geometry_params(
-                    input_header, row
+                post_mesh_spec=PostMeshSpec(
+                    material=MaterialParams(
+                        e_mod=row_values["Elastic Modulus"],
+                        nu=row_values["Poisson Ratio"],
+                        density=row_values["Density"],
+                    ),
+                    setup=SetupParams(
+                        sim_type=row_values[
+                            "Simulation Type"
+                        ],
+                        strain=row_values["Strain"],
+                        n_substeps=row_values["Substeps"],
+                    ),
                 ),
-                meshing_params=build_params(
-                    input_header, row
-                ),
-                setup_params=build_params(SetupParams, row),
             )
         )
+
     return tuple(cases)
+
+
+def _map_header_to_row_values(
+    input_header: Header,
+    row: tuple[Any, ...],
+) -> Dict[str, Any]:
+    if len(input_header) != len(row):
+        raise ValueError(
+            "Header and row lengths do not match: "
+            f"{len(input_header)} != {len(row)}"
+        )
+
+    return dict(zip(input_header, row))

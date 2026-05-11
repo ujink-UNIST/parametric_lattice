@@ -8,7 +8,7 @@
 from pathlib import Path
 
 _LGF_SUFFIX = ".lgf"
-_LGF_ROOT = "cells"
+_LGF_ROOT = "lgf"
 
 
 def import_lgf(name: str) -> list[str]:

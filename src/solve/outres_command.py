@@ -17,6 +17,5 @@ def load_outres_commands_() -> ApdlCommands:
         "OUTRES,NLOAD,ALL",
         "OUTRES,STRS,ALL",
         "OUTRES,EPEL,ALL",
-        "OUTRES,SENE,ALL",
         "OUTRES,VENG,ALL",
     )

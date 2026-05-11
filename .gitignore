@@ -1,0 +1,7 @@
+# Local/auto-generated type stubs
+_typings/
+typings/
+
+# Python cache
+__pycache__/
+*.py[cod]

@@ -19,16 +19,14 @@ from core.numeric.raw_beam import RawBeam
 
 
 def parse_lgf_(
-    content: str,
+    content: list[str],
 ) -> tuple[list[RawNode], list[RawEdge], list[RawBeam]]:
     nodes: list[RawNode] = []
     raw_edges: list[tuple[int, int, str]] = []
     beams: list[RawBeam] = []
     has_beam_records = False
 
-    for line_no, line in enumerate(
-        content.splitlines(), start=1
-    ):
+    for line_no, line in enumerate(content, start=1):
         text = line.strip()
         if not text or text.startswith("#"):
             continue

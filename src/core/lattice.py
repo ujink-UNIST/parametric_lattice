@@ -1,3 +1,6 @@
+# lattice.py
+
+
 from fractions import Fraction
 import math
 from typing import List, Sequence, Tuple, TypedDict
@@ -8,6 +11,7 @@ from core.numeric.direction import (
     UP,
     Direction,
     absolute,
+    parallel,
 )
 from core.numeric.point import Point, get_direction
 
@@ -21,7 +25,7 @@ class Node(TypedDict):
 class BeamType(TypedDict):
     id: int
     section_type: str
-    radius: float
+    radius_ratio: float
 
 
 class Edge(TypedDict):
@@ -31,6 +35,7 @@ class Edge(TypedDict):
     normal: list[float]
     beam_type_id: int
     section_ratio: float
+    extend_id: int
 
 
 class Lattice(TypedDict):
@@ -66,7 +71,7 @@ def sorted_to_lattice(
             {
                 "id": index,
                 "section_type": beam[0],
-                "radius": float(beam[1]),
+                "radius_ratio": float(beam[1]),
             }
             for index, beam in enumerate(sorted_beams)
         ],
@@ -83,6 +88,9 @@ def sorted_to_lattice(
                 "section_ratio": _get_section_ratio(
                     nodes[edge[0]]["boundary"],
                     nodes[edge[1]]["boundary"],
+                ),
+                "extend_id": _get_extend_id(
+                    index, edge, sorted_nodes, sorted_edges
                 ),
             }
             for index, edge in enumerate(sorted_edges)
@@ -145,3 +153,32 @@ def _get_section_ratio(
     if matches == 1:
         return 0.5
     return 0.25
+
+
+def _get_extend_id(
+    index: int,
+    edge_data: Tuple[int, ...],
+    sorted_nodes: List[Point],
+    sorted_edges: List[Tuple[int, ...]],
+) -> int:
+    node0_id = edge_data[0]
+    node1_id = edge_data[1]
+
+    node0: Point = sorted_nodes[node0_id]
+    node1: Point = sorted_nodes[node1_id]
+    dir0: Direction = get_direction(node0, node1)
+
+    for idx, edge in enumerate(sorted_edges):
+        if (
+            edge[0] == node0_id
+            or edge[0] == node1_id
+            or edge[1] == node0_id
+            or edge[1] == node1_id
+        ):
+            dir1: Direction = get_direction(
+                sorted_nodes[edge[0]],
+                sorted_nodes[edge[1]],
+            )
+            if parallel(dir0, dir1) and index < idx:
+                return idx
+    return -1

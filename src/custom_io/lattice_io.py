@@ -18,5 +18,16 @@ def import_lattice(name: str) -> Lattice:
     )
 
 
+def try_import_lattice(name: str) -> Lattice | None:
+    try:
+        return import_lattice(name)
+    except (
+        FileNotFoundError,
+        ValueError,
+        TypeError,
+    ):
+        return None
+
+
 def export_lattice(name: str, lattice: Lattice) -> None:
     export_json(name, dict(lattice))

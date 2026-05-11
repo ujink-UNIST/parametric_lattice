@@ -7,18 +7,34 @@
 
 from dataclasses import dataclass
 
+from core.parameters.element_type_params import (
+    ElementTypeParams,
+)
 from core.parameters.geometry_params import GeometryParams
 from core.parameters.material_params import MaterialParams
 from core.parameters.meshing_params import MeshingParams
-
-# from core.parameters.results_params import ResultsParams
+from core.parameters.profile_params import (
+    ProfileParams,
+)
 from core.parameters.setup_params import SetupParams
+
+
+@dataclass(frozen=True)
+class PreMeshSpec:
+    element_type: ElementTypeParams
+    profile: ProfileParams
+    geometry: GeometryParams
+    meshing: MeshingParams
+
+
+@dataclass(frozen=True)
+class PostMeshSpec:
+    material: MaterialParams
+    setup: SetupParams
 
 
 @dataclass(frozen=True)
 class SimCase:
     row_idx: int
-    material_params: MaterialParams
-    geometry_params: GeometryParams
-    meshing_params: MeshingParams
-    setup_params: SetupParams
+    pre_mesh_spec: PreMeshSpec
+    post_mesh_spec: PostMeshSpec

@@ -9,33 +9,40 @@ from __future__ import annotations
 
 from core.apdl_commands import ApdlCommands
 from core.parameters.geometry_params import GeometryParams
-from core.parameters.material_params import MaterialParams
 from core.parameters.meshing_params import MeshingParams
+from core.parameters.profile_params import ProfileParams
 from core.unit_cell import UnitCell
-from meshing.lattice_surface_meshing import (
-    build_lattice_surface_meshing_commands_,
+from meshing.surface_meshing import (
+    build_surface_area_meshing_commands_,
+    build_surface_line_meshing_commands_,
 )
-from meshing.lattice_volume_meshing import (
-    build_lattice_volume_meshing_commands_,
+from meshing.volume_meshing import (
+    build_volume_meshing_commands_,
 )
 
 
 def meshing_commands(
     unit_cell: UnitCell,
     geometry_params: GeometryParams,
+    profile_params: ProfileParams,
     meshing_params: MeshingParams,
-    material_params: MaterialParams,
 ) -> ApdlCommands:
     """Return the complete lattice meshing command sequence."""
     return (
         ("! --- Lattice meshing pipeline ---",)
-        + build_lattice_surface_meshing_commands_(
-            unit_cell, meshing_params
-        )
-        + build_lattice_volume_meshing_commands_(
-            unit_cell,
+        + build_surface_line_meshing_commands_(
             geometry_params,
+            profile_params,
             meshing_params,
-            material_params,
+        )
+        + build_surface_area_meshing_commands_(
+            geometry_params,
+            profile_params,
+            meshing_params,
+        )
+        + build_volume_meshing_commands_(
+            unit_cell,
+            profile_params,
+            meshing_params,
         )
     )

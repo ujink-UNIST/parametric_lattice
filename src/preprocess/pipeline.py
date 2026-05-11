@@ -15,9 +15,7 @@ from preprocess.canonicalize import canonicalize_
 from core.unit_cell import UnitCell, unit_cell_from_lattice
 
 
-def parse_lgf_unit_cell(
-    content: str, name: str = "unknown"
-) -> UnitCell:
+def lgf_to_lattice(content: list[str]) -> Lattice:
     """Parse LGF through canonical JSON and return a solver ``UnitCell``."""
     nodes, edges, beams = parse_lgf_(content)
     validate_raw_lattice_(nodes, edges, beams)
@@ -27,4 +25,8 @@ def parse_lgf_unit_cell(
     lattice: Lattice = sorted_to_lattice(
         sorted_nodes, sorted_beams, sorted_edges
     )
-    return unit_cell_from_lattice(lattice, name)
+    return lattice
+
+
+def lattice_to_unit_cell(lattice: Lattice) -> UnitCell:
+    return unit_cell_from_lattice(lattice)

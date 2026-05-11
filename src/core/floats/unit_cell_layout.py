@@ -5,13 +5,24 @@
 # Modified: Wed Apr 29 2026
 
 
-from collections.abc import Sequence
-import numpy as np
-from jaxtyping import Float, Int
+"""Backwards-compatible re-exports for unit-cell layout array type aliases."""
 
-Nodes = Float[np.ndarray, "N 3"]
-NodeBoundaries = Int[np.ndarray, "N 3"]
-Edges = Int[np.ndarray, "E 3"]
-EdgeTypeIds = Int[np.ndarray, "E"]
-EdgeRatios = Float[np.ndarray, "E"]
-EdgeNormals = Float[np.ndarray, "E 3"]
+from __future__ import annotations
+
+from core.floats.types import (
+    EdgeNormals,
+    EdgeRatios,
+    EdgeTypeIds,
+    Edges,
+    NodeBoundaries,
+    Nodes,
+)
+
+__all__ = [
+    "Nodes",
+    "NodeBoundaries",
+    "Edges",
+    "EdgeTypeIds",
+    "EdgeRatios",
+    "EdgeNormals",
+]

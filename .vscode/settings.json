@@ -22,11 +22,7 @@
         {
             "language": "*",
             "template": [
-                "File: <<filePath>>",
-                "Author: <<author>> (<<authoremail>>)",
-                "Company: <<company>>",
-                "Created: <<date>>",
-                "Modified: <<date>>"
+                "<<filename>>"
             ]
         }
     ],

@@ -20,20 +20,50 @@ def strain_variable_commands(
 ) -> ApdlCommands:
     sim_type = setup_params.sim_type
     strain = setup_params.strain
-    keys = ("xx", "yy", "zz", "xy", "yz", "xz")
+    values = {
+        "xx": 0.0,
+        "yy": 0.0,
+        "zz": 0.0,
+        "xy": 0.0,
+        "yx": 0.0,
+        "yz": 0.0,
+        "zy": 0.0,
+        "xz": 0.0,
+        "zx": 0.0,
+    }
 
+    if sim_type in ("xy", "yx"):
+        values["xy"] = strain
+        values["yx"] = strain
+    elif sim_type in ("yz", "zy"):
+        values["yz"] = strain
+        values["zy"] = strain
+    elif sim_type in ("xz", "zx"):
+        values["xz"] = strain
+        values["zx"] = strain
+    else:
+        values[sim_type] = strain
+
+    keys = (
+        "xx",
+        "yy",
+        "zz",
+        "xy",
+        "yx",
+        "yz",
+        "zy",
+        "xz",
+        "zx",
+    )
     return tuple(
-        (
-            f"*SET,e_{k},{strain:.10g}"
-            if k == sim_type
-            else f"*SET,e_{k},0"
-        )
-        for k in keys
+        f"*SET,e_{key},{values[key]:.10g}" for key in keys
     )
 
 
-def select_all_boundary_nodes_commands() -> ApdlCommands:
-    return ("CMSEL,S,BOUNDARY_NODES",)
+def select_boundary_nodes_commands(
+    component_name: str = "BOUNDARY_NODES",
+) -> ApdlCommands:
+    return (f"CMSEL,S,{component_name}",)
 
 
 def apply_displacement_loop_commands(
@@ -80,12 +110,15 @@ def apply_displacement_loop_commands(
     )
 
 
-def bc_commands(setup_params: SetupParams) -> ApdlCommands:
+def bc_commands(
+    setup_params: SetupParams,
+    boundary_component: str = "BOUNDARY_NODES",
+) -> ApdlCommands:
     """Dispatch static boundary-condition commands to beam/solid builders."""
 
     return (
         strain_variable_commands(setup_params)
-        + select_all_boundary_nodes_commands()
+        + select_boundary_nodes_commands(boundary_component)
         + apply_displacement_loop_commands()
-        + ("ALLSET,ALL",)
+        + ("ALLSEL,ALL",)
     )
