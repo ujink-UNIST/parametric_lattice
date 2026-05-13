@@ -15,6 +15,13 @@ class SetupParams:
     strain: float
     n_substeps: int = 1
 
+    def to_string(self) -> str:
+        return (
+            f"SimType:{self.sim_type}"
+            f"__Strain:{self.strain:.6f}"
+            f"__Substeps:{self.n_substeps}"
+        )
+
 
 def build_setup_params(
     input_header: Tuple[str, ...], row: Tuple[Any, ...]

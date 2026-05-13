@@ -37,7 +37,9 @@ src/custom_io/geometry_io.py
 src/custom_io/json_io.py
 src/custom_io/lattice_io.py
 src/custom_io/lgf_io.py
+src/custom_io/path_safety.py
 src/custom_io/pipeline.py
+src/custom_io/socket_io.py
 src/element_type/element_type_command.py
 src/element_type/pipeline.py
 src/geometry/__init__.py

@@ -49,5 +49,8 @@
     "[json]": {
         "editor.tabSize": 4,
         "editor.insertSpaces": true
+    },
+    "workbench.editorAssociations": {
+        "*.xlsm": "default"
     }
 }

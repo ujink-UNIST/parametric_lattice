@@ -13,6 +13,9 @@ from typing import Any, Tuple
 class MeshingParams:
     max_element_size: float
 
+    def to_string(self) -> str:
+        return f"MaxElementSize:{self.max_element_size:.6f}"
+
 
 def build_meshing_params(
     input_header: Tuple[str, ...], row: Tuple[Any, ...]

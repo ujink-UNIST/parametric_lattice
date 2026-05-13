@@ -190,12 +190,10 @@ def build_geometry_trim_commands_(
 
     x, y, z = geometry_params.size
 
-    cmds: list[str] = list(
-        apdl_block(f"""
+    cmds: list[str] = list(apdl_block(f"""
 
 {apdl_comment("Modify geometry to match periodic condition")}
-""")
-    )
+"""))
 
     directions = [
         (x, 0, 0, "X"),
@@ -216,7 +214,7 @@ ALLSEL
 VADD,ALL
 NUMMRG,ALL
 NUMCMP,ALL
-BLOCK,{-x+dx*0.4},{x-dx*0.4},{-y+dy*0.4},{y-dy*0.4},{-z+dz*0.4},{z-dz*0.4}
+BLOCK,{-x+dx*0.45},{x-dx*0.45},{-y+dy*0.45},{y-dy*0.45},{-z+dz*0.45},{z-dz*0.45}
 VINTF,1,2
 NUMMRG,ALL
 NUMCMP,ALL

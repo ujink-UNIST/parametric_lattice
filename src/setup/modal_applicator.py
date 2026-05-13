@@ -8,8 +8,13 @@
 """Modal-analysis setup command builder."""
 
 from __future__ import annotations
+from typing import Tuple
 
 from core.apdl_commands import ApdlCommands
+from core.parameters.profile_params import (
+    BeamProfileParams,
+    ProfileParams,
+)
 
 TANGENT_AXIS = {
     "X": ("Y", "Z"),
@@ -41,7 +46,10 @@ def select_periodic_nodes_commands(
 
 
 def _face_pair_periodic_commands(
-    negative_cm: str, positive_cm: str, axis: str
+    negative_cm: str,
+    positive_cm: str,
+    axis: str,
+    ce_dofs: tuple[str, ...],
 ) -> ApdlCommands:
     """Return APDL commands tying one pair of opposite precomputed periodic faces."""
     tangent_a, tangent_b = TANGENT_AXIS[axis]
@@ -54,7 +62,7 @@ def _face_pair_periodic_commands(
     tangent_b_var = f"_{tangent_b}_{axis}_"
     active_cm = f"PBC_{axis}"
 
-    ce_dofs = ("UX", "UY", "UZ", "ROTX", "ROTY", "ROTZ")
+    # ce_dofs = ("UX", "UY", "UZ", "ROTX", "ROTY", "ROTZ")
 
     ce_commands: ApdlCommands = tuple(
         f"CE,NEXT,0,{plus_node},{dof},1,{minus_node},{dof},-1"
@@ -84,14 +92,31 @@ def _face_pair_periodic_commands(
     )
 
 
-def modal_commands() -> ApdlCommands:
+def modal_commands(
+    profile_params: ProfileParams,
+) -> ApdlCommands:
     """Return periodic boundary-condition commands for modal analysis."""
 
     cmds: ApdlCommands = ()
+
+    ce_dofs = (
+        "UX",
+        "UY",
+        "UZ",
+    )
+
+    if isinstance(profile_params, BeamProfileParams):
+        ce_dofs += (
+            "ROTX",
+            "ROTY",
+            "ROTZ",
+        )
+
     for axis in ("X", "Y", "Z"):
         cmds += _face_pair_periodic_commands(
             f"PERIODIC_NODES_N{axis}",
             f"PERIODIC_NODES_P{axis}",
             axis,
+            ce_dofs,
         )
     return cmds

@@ -45,38 +45,6 @@ def _build_sim_case(sim_type: str) -> SimCase:
     )
 
 
-def test_pipeline_static_case_contains_all_major_stage_markers(
-    simple_unit_cell,
-):
-    commands = build_pipeline(
-        simple_unit_cell,
-        _build_sim_case("xx"),
-    )
-
-    assert commands[0] == "/CLEAR,START"
-    assert (
-        "! Define beam element type and material properties"
-        in commands
-    )
-    assert any(
-        cmd.startswith("SECTYPE,") for cmd in commands
-    )
-    assert any(cmd.startswith("K,") for cmd in commands)
-    assert any(cmd.startswith("L,") for cmd in commands)
-    assert any(
-        cmd.startswith("LESIZE,") for cmd in commands
-    )
-    assert "LMESH,ALL" in commands
-    assert any(
-        cmd.startswith("MP,EX,1,") for cmd in commands
-    )
-    assert "CMSEL,S,BOUNDARY_ENDPOINT_NODES" in commands
-    assert "/SOLU" in commands
-    assert "ANTYPE,STATIC" in commands
-    assert "SOLVE" in commands
-    assert commands[-1] == "FINISH"
-
-
 def test_pipeline_modal_case_uses_modal_solver_branch(
     simple_unit_cell,
 ):

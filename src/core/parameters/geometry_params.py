@@ -20,6 +20,13 @@ class GeometryParams:
     cell_name: str
     size: Vector3
 
+    def to_string(self) -> str:
+        sx, sy, sz = (float(self.size[0]), float(self.size[1]), float(self.size[2]))
+        return (
+            f"Cell:{self.cell_name}"
+            f"__Size:{sx:.6f},{sy:.6f},{sz:.6f}"
+        )
+
 
 def build_geometry_params(
     input_header: Tuple[str, ...], row: Tuple[Any, ...]

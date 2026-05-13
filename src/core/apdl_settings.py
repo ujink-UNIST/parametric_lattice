@@ -31,7 +31,6 @@ class ApdlSettings:
         default_factory=tuple
     )
     cleanup_on_exit: bool = True
-    close_on_exit: bool = True
 
     def to_launch_kwargs(self) -> dict[str, Any]:
         switches = list(self.additional_switches)
@@ -51,7 +50,6 @@ class ApdlSettings:
             "mode": self.mode,
             "override": self.override,
             "cleanup_on_exit": self.cleanup_on_exit,
-            "close_on_exit": self.close_on_exit,
         }
 
         if self.nproc is not None:

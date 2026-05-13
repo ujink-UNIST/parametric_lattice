@@ -15,6 +15,13 @@ class MaterialParams:
     nu: float
     density: float
 
+    def to_string(self) -> str:
+        return (
+            f"E:{self.e_mod:.6f}"
+            f"__Nu:{self.nu:.6f}"
+            f"__Density:{self.density:.6f}"
+        )
+
 
 def build_material_params(
     input_header: Tuple[str, ...], row: Tuple[Any, ...]

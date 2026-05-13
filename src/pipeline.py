@@ -10,7 +10,10 @@ from element_type.pipeline import element_type_commands
 from geometry.pipeline import geometry_commands
 from material.pipeline import material_commands
 from meshing.pipeline import meshing_commands
-from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
+from preprocess.pipeline import (
+    lattice_to_unit_cell,
+    lgf_to_lattice,
+)
 from profile_.pipeline import profile_commands
 from results.pipeline import results_commands
 from setup.pipeline import setup_commands
@@ -31,9 +34,14 @@ def build_pipeline(
     if isinstance(unit_cell, SimCase):
         sim_case = unit_cell
         lattice: Lattice = lgf_to_lattice(
-            import_lgf(sim_case.pre_mesh_spec.geometry.cell_name)
+            import_lgf(
+                sim_case.pre_mesh_spec.geometry.cell_name
+            )
         )
-        export_lattice(sim_case.pre_mesh_spec.geometry.cell_name, lattice)
+        export_lattice(
+            sim_case.pre_mesh_spec.geometry.cell_name,
+            lattice,
+        )
         unit_cell = lattice_to_unit_cell(lattice)
     else:
         if sim_case is None:
@@ -49,8 +57,12 @@ def build_pipeline(
 
     return (
         pre
-        + element_type_commands(sim_case.pre_mesh_spec.element_type)
-        + geometry_commands(unit_cell, sim_case.pre_mesh_spec.geometry)
+        + element_type_commands(
+            sim_case.pre_mesh_spec.element_type
+        )
+        + geometry_commands(
+            unit_cell, sim_case.pre_mesh_spec.geometry
+        )
         + profile_commands(
             unit_cell,
             sim_case.pre_mesh_spec.geometry,
@@ -62,14 +74,16 @@ def build_pipeline(
             sim_case.pre_mesh_spec.profile,
             sim_case.pre_mesh_spec.meshing,
         )
-        + material_commands(sim_case.post_mesh_spec.material)
+        + material_commands(
+            sim_case.post_mesh_spec.material
+        )
         + setup_commands(
             unit_cell,
-            sim_case.pre_mesh_spec.element_type,
+            sim_case.pre_mesh_spec.profile,
             sim_case.pre_mesh_spec.geometry,
             sim_case.post_mesh_spec.setup,
         )
         + solver_commands(sim_case.post_mesh_spec.setup)
-        + results_commands()
+        # results_commands()
         + ("FINISH",)
     )

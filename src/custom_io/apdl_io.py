@@ -1,17 +1,16 @@
 from __future__ import annotations
 
+import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+
 from ansys.mapdl.core.launcher import launch_mapdl
 from ansys.mapdl.core.mapdl_console import MapdlConsole
 from ansys.mapdl.core.mapdl_grpc import MapdlGrpc
+
 from core.apdl_commands import ApdlCommands, Mapdl
-from contextlib import contextmanager
-
 from core.apdl_settings import ApdlSettings
-
-BLOCK_STARTERS = ("*DO", "*IF", "*DOWHILE")
-BLOCK_ENDERS = ("*ENDDO", "*ENDIF")
 
 
 def start_mapdl(
@@ -28,49 +27,62 @@ def start_mapdl(
 
 
 def run_commands(
-    mapdl: Mapdl, commands: ApdlCommands | tuple[Any, ...]
+    mapdl: Mapdl, commands: ApdlCommands
 ) -> None:
-    block: list[str] = []
-    in_block = False
+    apdl_script = generate_apdl_script(commands)
+    do_count = 0
+    if_count = 0
+    block = ""
 
-    for command in commands:
-        if callable(command):
-            command(mapdl)
+    for apdl_line in apdl_script.splitlines():
+        line = apdl_line.rstrip()
+        if not line.strip():
             continue
-        if isinstance(command, tuple):
-            run_commands(mapdl, command)
-            continue
 
-        cmd_upper = command.strip().upper()
+        upper = (
+            line.strip().upper().split("!")[0].strip()
+        )  # 주석 제거 후 판단
 
-        if any(
-            cmd_upper.startswith(s) for s in BLOCK_STARTERS
-        ):
-            in_block = True
-            block.append(command)
-        elif in_block:
-            block.append(command)
-            if any(
-                cmd_upper.startswith(e)
-                for e in BLOCK_ENDERS
-            ):
-                result = mapdl.input_strings(
-                    "\n".join(block)
-                )
-                if result:
-                    print(result)
-                block = []
-                in_block = False
-        else:
-            result = mapdl.run(command)
+        # 카운터 업데이트 (block에 추가하기 전)
+        if upper.startswith("*DO"):
+            do_count += 1
+        elif upper.startswith("*ENDDO"):
+            do_count = max(0, do_count - 1)
+        elif upper.startswith("*IF") and "THEN" in upper:
+            if_count += 1
+        elif upper.startswith("*ENDIF"):
+            if_count = max(0, if_count - 1)
+
+        block += line + "\n"
+
+        # DO/IF 블록 밖에서만 전송
+        if if_count == 0 and do_count == 0:
+            result = mapdl.input_strings(block)
+            block = ""
             if result:
                 print(result)
+
+    # 혹시 남은 블록
+    if block.strip():
+        result = mapdl.input_strings(block)
+        if result:
+            print(result)
+
+
+def generate_apdl_script(commands: ApdlCommands) -> str:
+    return "\n".join(
+        cmd.strip() for cmd in commands if cmd.strip()
+    )
 
 
 def _kill_process_tree(pid: int) -> None:
     try:
-        import psutil
+        import psutil  # type: ignore
+    except ImportError:
+        print("psutil is not installed; cannot kill MAPDL process tree")
+        return
 
+    try:
         parent = psutil.Process(pid)
         for child in parent.children(recursive=True):
             child.kill()
@@ -95,13 +107,6 @@ def _stop_grpc(mapdl: MapdlGrpc) -> None:
 
 
 def stop_mapdl(mapdl: Mapdl) -> None:
-    """Stop MAPDL session.
-
-    In unit tests we use a lightweight fake object that only exposes an
-    ``exit()`` method, so we fall back to duck-typing when the object is not an
-    official MAPDL class.
-    """
-
     try:
         if isinstance(mapdl, MapdlGrpc):
             _stop_grpc(mapdl)
@@ -119,10 +124,11 @@ def mapdl_session(
     settings: ApdlSettings | None = None,
     **launch_kwargs: Any,
 ):
-
     mapdl = start_mapdl(settings, **launch_kwargs)
     try:
         yield mapdl
     finally:
         print("Closing MAPDL...")
         stop_mapdl(mapdl)
+        # Give MAPDL a moment to release the gRPC port/file handles.
+        time.sleep(1.0)

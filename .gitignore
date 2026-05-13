@@ -4,4 +4,12 @@ typings/
 
 # Python cache
 __pycache__/
+*/__pycache__/
 *.py[cod]
+
+cache/
+artifacts/
+results/
+~$*.xlsm
+
+.vscode/*.json

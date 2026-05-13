@@ -12,6 +12,10 @@ from __future__ import annotations
 
 from core.apdl_commands import ApdlCommands
 from core.parameters.geometry_params import GeometryParams
+from core.parameters.profile_params import (
+    BeamProfileParams,
+    ProfileParams,
+)
 from core.parameters.setup_params import SetupParams
 
 
@@ -60,65 +64,56 @@ def strain_variable_commands(
     )
 
 
-def select_boundary_nodes_commands(
-    component_name: str = "BOUNDARY_NODES",
-) -> ApdlCommands:
-    return (f"CMSEL,S,{component_name}",)
-
-
 def apply_displacement_loop_commands(
-    has_rotation_dof: bool = False,
+    ce_dofs: tuple[str, ...],
 ) -> ApdlCommands:
-    """Apply affine displacement boundary conditions to the currently selected nodes."""
-    LOOP_VAR = "_I_BC_"
-    COUNT_VAR = "_NCOUNT_BC_"
-    NODE_VAR = "_NID_BC_"
-    X_VAR = "_X0_BC_"
-    Y_VAR = "_Y0_BC_"
-    Z_BAR = "_Z0_BC_"
-    UX_VAR = "_UX_BC_"
-    UY_VAR = "_UY_BC_"
-    UZ_VAR = "_UZ_BC_"
-
-    rot_cmds = (
-        (
-            f"D,{NODE_VAR},ROTX,0",
-            f"D,{NODE_VAR},ROTY,0",
-            f"D,{NODE_VAR},ROTZ,0",
-        )
-        if has_rotation_dof
-        else ()
+    ce_commands: ApdlCommands = tuple(
+        f"D,_NID_BC_,{dof},0" for dof in ce_dofs
     )
 
     return (
-        f"*GET,{COUNT_VAR},NODE,0,COUNT",
-        f"*DO,{LOOP_VAR},1,{COUNT_VAR}",
-        f"*GET,{NODE_VAR},NODE,0,NUM,MIN",
-        f"*GET,{X_VAR},NODE,{NODE_VAR},LOC,X",
-        f"*GET,{Y_VAR},NODE,{NODE_VAR},LOC,Y",
-        f"*GET,{Z_BAR},NODE,{NODE_VAR},LOC,Z",
-        f"{UX_VAR}=e_xx*{X_VAR}+e_xy*{Y_VAR}+e_xz*{Z_BAR}",
-        f"{UY_VAR}=e_yx*{X_VAR}+e_yy*{Y_VAR}+e_yz*{Z_BAR}",
-        f"{UZ_VAR}=e_zx*{X_VAR}+e_zy*{Y_VAR}+e_zz*{Z_BAR}",
-        f"D,{NODE_VAR},UX,{UX_VAR}",
-        f"D,{NODE_VAR},UY,{UY_VAR}",
-        f"D,{NODE_VAR},UZ,{UZ_VAR}",
-        *rot_cmds,
+        "CMSEL,S,BOUNDARY_NODES",
+        f"*GET,_NCOUNT_BC_,NODE,0,COUNT",
+        f"*DO,_I_BC_,1,_NCOUNT_BC_",
+        f"*GET,_NID_BC_,NODE,0,NUM,MIN",
+        f"*GET,_X0_BC_,NODE,_NID_BC_,LOC,X",
+        f"*GET,_Y0_BC_,NODE,_NID_BC_,LOC,Y",
+        f"*GET,_Z0_BC_,NODE,_NID_BC_,LOC,Z",
+        f"_UX_BC_=e_xx*_X0_BC_+e_xy*_Y0_BC_+e_xz*_Z0_BC_",
+        f"_UY_BC_=e_yx*_X0_BC_+e_yy*_Y0_BC_+e_yz*_Z0_BC_",
+        f"_UZ_BC_=e_zx*_X0_BC_+e_zy*_Y0_BC_+e_zz*_Z0_BC_",
+        f"D,_NID_BC_,UX,_UX_BC_",
+        f"D,_NID_BC_,UY,_UY_BC_",
+        f"D,_NID_BC_,UZ,_UZ_BC_",
+        *ce_commands,
         "! Remove the current node so the next NUM,MIN query advances.",
-        f"NSEL,U,NODE,,{NODE_VAR}",
+        f"NSEL,U,NODE,,_NID_BC_",
         "*ENDDO",
     )
 
 
 def bc_commands(
+    profile_params: ProfileParams,
     setup_params: SetupParams,
-    boundary_component: str = "BOUNDARY_NODES",
+    # boundary_component: str = "BOUNDARY_NODES",
 ) -> ApdlCommands:
     """Dispatch static boundary-condition commands to beam/solid builders."""
 
+    ce_dofs = (
+        "UX",
+        "UY",
+        "UZ",
+    )
+
+    if isinstance(profile_params, BeamProfileParams):
+        ce_dofs += (
+            "ROTX",
+            "ROTY",
+            "ROTZ",
+        )
+
     return (
         strain_variable_commands(setup_params)
-        + select_boundary_nodes_commands(boundary_component)
-        + apply_displacement_loop_commands()
+        + apply_displacement_loop_commands(ce_dofs)
         + ("ALLSEL,ALL",)
     )

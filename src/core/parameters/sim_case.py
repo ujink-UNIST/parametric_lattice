@@ -26,11 +26,29 @@ class PreMeshSpec:
     geometry: GeometryParams
     meshing: MeshingParams
 
+    def to_string(self) -> str:
+        return (
+            self.element_type.to_string()
+            + "__"
+            + self.profile.to_string()
+            + "__"
+            + self.geometry.to_string()
+            + "__"
+            + self.meshing.to_string()
+        )
+
 
 @dataclass(frozen=True)
 class PostMeshSpec:
     material: MaterialParams
     setup: SetupParams
+
+    def to_string(self) -> str:
+        return (
+            self.material.to_string()
+            + "__"
+            + self.setup.to_string()
+        )
 
 
 @dataclass(frozen=True)
@@ -38,3 +56,10 @@ class SimCase:
     row_idx: int
     pre_mesh_spec: PreMeshSpec
     post_mesh_spec: PostMeshSpec
+
+    def to_string(self) -> str:
+        return (
+            self.pre_mesh_spec.to_string()
+            + "__"
+            + self.post_mesh_spec.to_string()
+        )

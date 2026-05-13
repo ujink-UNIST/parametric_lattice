@@ -49,7 +49,9 @@ class SimCaseInput:
 
 def load_unit_cell(cell_name: str) -> UnitCell:
     lgf_lines = import_lgf(cell_name)
-    unit_cell = lattice_to_unit_cell(lgf_to_lattice(lgf_lines))
+    unit_cell = lattice_to_unit_cell(
+        lgf_to_lattice(lgf_lines)
+    )
     return replace(unit_cell, name=cell_name)
 
 
@@ -101,17 +103,7 @@ def build_sim_case(
 def generate_apdl_commands(
     sim_case: SimCase,
 ) -> ApdlCommands:
-    commands = build_pipeline(sim_case)
-
-    # The preview API/fixtures want the command stream starting from the first
-    # "real" stage marker (element type definition), not the global /CLEAR.
-    try:
-        start = commands.index(
-            "! Define beam element type and material properties"
-        )
-        return commands[start:]
-    except ValueError:
-        return commands
+    return build_pipeline(sim_case)
 
 
 def generate_apdl_text(
