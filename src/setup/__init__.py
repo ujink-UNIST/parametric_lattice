@@ -1,6 +1,6 @@
 # __init__.py
 
-﻿"""setup package."""
+"""setup package."""
 
 from .bc_applicator import (
     apply_displacement_loop_commands,
