@@ -1,3 +1,5 @@
+# solid_section_command.py
+
 from typing import List
 
 import numpy as np

@@ -1,3 +1,5 @@
+# vector.py
+
 """Backwards-compatible re-exports for vector/matrix type aliases."""
 
 from __future__ import annotations

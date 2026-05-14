@@ -1,3 +1,5 @@
+# __init__.py
+
 """solve package."""
 
 from .analysis_settings_command import (

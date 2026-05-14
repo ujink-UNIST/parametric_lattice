@@ -1,3 +1,5 @@
+# pipeline.py
+
 from core.apdl_block import apdl_section
 from core.apdl_commands import ApdlCommands
 from core.parameters.geometry_params import GeometryParams

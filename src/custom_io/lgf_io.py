@@ -1,9 +1,4 @@
-# File: c:\Users\USER\Documents\parametric_lattice\src\io\lgf_io.py
-# Author: 김우진 (ujink1225@unist.ac.kr)
-# Company: UNIST UCIM Lab
-# Created: Thu Apr 30 2026
-# Modified: Thu Apr 30 2026
-
+# lgf_io.py
 
 from __future__ import annotations
 

@@ -1,3 +1,5 @@
+# force_extractor.py
+
 """Reaction force extraction utilities using MAPDL FSUM."""
 
 from __future__ import annotations

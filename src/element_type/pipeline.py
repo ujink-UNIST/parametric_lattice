@@ -1,3 +1,5 @@
+# pipeline.py
+
 from core.apdl_commands import ApdlCommands
 from core.parameters.element_type_params import (
     ElementTypeParams,

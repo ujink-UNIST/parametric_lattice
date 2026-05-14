@@ -1,9 +1,4 @@
-# File: c:\Users\USER\Documents\parametric_lattice\src\geometry\line_section_command.py
-# Author: 김우진 (ujink1225@unist.ac.kr)
-# Company: UNIST UCIM Lab
-# Created: Wed Apr 29 2026
-# Modified: Wed Apr 29 2026
-
+# line_section_command.py
 
 from __future__ import annotations
 

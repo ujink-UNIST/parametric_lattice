@@ -1,3 +1,5 @@
+# bc_applicator.py
+
 ﻿# File: c:\Users\USER\Documents\parametric_lattice\src\setup\bc_applicator.py
 # Author: 김우진 (ujink1225@unist.ac.kr)
 # Company: UNIST UCIM Lab

@@ -1,9 +1,4 @@
-# File: c:\Users\USER\Documents\parametric_lattice\src\core\parameters\meshing_params.py
-# Author: 김우진 (ujink1225@unist.ac.kr)
-# Company: UNIST UCIM Lab
-# Created: Wed Apr 29 2026
-# Modified: Wed Apr 29 2026
-
+# meshing_params.py
 
 from dataclasses import dataclass
 from typing import Any, Tuple

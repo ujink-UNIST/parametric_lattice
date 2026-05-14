@@ -1,6 +1,5 @@
 # apdl_commands.py
 
-
 from typing import Tuple
 
 from ansys.mapdl.core.mapdl_console import MapdlConsole

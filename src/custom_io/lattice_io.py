@@ -1,3 +1,5 @@
+# lattice_io.py
+
 from typing import Any, cast
 
 from dacite import from_dict, Config

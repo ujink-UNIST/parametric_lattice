@@ -1,3 +1,5 @@
+# apdl_utils.py
+
 """Shared APDL command-running and logging utilities."""
 
 from __future__ import annotations

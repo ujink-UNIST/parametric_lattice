@@ -1,9 +1,4 @@
-# File: c:\Users\USER\Documents\parametric_lattice\src\meshing\element_type_command.py
-# Author: 김우진 (ujink1225@unist.ac.kr)
-# Company: UNIST UCIM Lab
-# Created: Wed Apr 29 2026
-# Modified: Wed Apr 29 2026
-
+# element_type_command.py
 
 from core.apdl_commands import ApdlCommands
 
