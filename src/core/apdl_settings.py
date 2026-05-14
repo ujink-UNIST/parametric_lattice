@@ -12,9 +12,9 @@ GpuMode = Literal["off", "on"]
 class ApdlSettings:
     # 기본 실행 설정
     jobname: str = "file"
-    run_location: Path = Path(
-        r"C:\Users\USER\Documents\ANSYS workdir"
-    )
+    # NOTE: Avoid hard-coding the Windows username. Use the current user's home directory.
+    # Default: ~/Documents/ANSYS workdir
+    run_location: Path = Path.home() / "Documents" / "ANSYS workdir"
     mode: MapdlMode = "grpc"
     override: bool = True
 
