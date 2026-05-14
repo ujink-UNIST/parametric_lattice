@@ -94,14 +94,10 @@ def bc_commands(
 ) -> ApdlCommands:
     """Dispatch static boundary-condition commands to beam/solid builders."""
 
-    ce_dofs = (
-        "UX",
-        "UY",
-        "UZ",
-    )
+    ce_dofs = ()
 
     if isinstance(profile_params, BeamProfileParams):
-        ce_dofs += (
+        ce_dofs = (
             "ROTX",
             "ROTY",
             "ROTZ",

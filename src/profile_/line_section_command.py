@@ -18,7 +18,7 @@ def build_line_section_commands_(
 
     cmds: list[str] = []
     for i, sec_id in enumerate(edge_sec_ids, start=1):
-        kb_n = orientation_keypoint_start + i
+        kb_n = orientation_keypoint_start + i * 2 - 1
         cmds.extend(
             (
                 f"! Assign section {sec_id} to beam line {i}",
