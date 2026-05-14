@@ -13,3 +13,7 @@ results/
 ~$*.xlsm
 
 .vscode/*.json
+
+# Tests (ignored)
+tests/
+.pytest_cache/
