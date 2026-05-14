@@ -1,3 +1,5 @@
+LICENSE
+README.md
 pyproject.toml
 src/core/apdl_block.py
 src/core/apdl_commands.py

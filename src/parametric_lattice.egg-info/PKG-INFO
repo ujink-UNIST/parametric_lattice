@@ -5,6 +5,7 @@ Summary: Parametric lattice simulation helpers for MAPDL-based workflows.
 Author: Parametric Lattice Contributors
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
+License-File: LICENSE
 Requires-Dist: numpy>=2.4.4
 Requires-Dist: jaxtyping>=0.2.0
 Provides-Extra: excel
@@ -19,3 +20,114 @@ Provides-Extra: all
 Requires-Dist: xlwings>=0.30; extra == "all"
 Requires-Dist: plotly>=6.7.0; extra == "all"
 Requires-Dist: ansys-mapdl-core>=0.71; extra == "all"
+Dynamic: license-file
+
+# parametric-lattice
+
+MAPDL 기반 워크플로우를 위한 파라메트릭 라티스 시뮬레이션 헬퍼.
+
+## 요구사항
+
+- Windows + Excel (xlwings는 기본적으로 Excel 데스크톱 앱을 사용)
+- Conda (권장)
+- (선택) ANSYS MAPDL / PyMAPDL 환경
+
+## 설치 / 개발 환경 세팅 (Conda)
+
+이 프로젝트는 Conda 환경 **`param_lattice`** 를 사용합니다.
+
+### 1) Conda 환경 생성
+
+```powershell
+# (필요 시) conda 초기화
+& "C:\ProgramData\miniconda3\shell\condabin\conda-hook.ps1"
+
+# 환경 생성
+conda env create -f environment.yml
+
+# 활성화
+conda activate param_lattice
+```
+
+### 2) 로컬 패키지 설치 확인
+
+`environment.yml`에서 `pip: - "-e .[all,dev]"`로 editable 설치를 수행합니다.
+이미 환경 생성 과정에서 설치되지만, 누락/변경 시 아래로 재설치할 수 있습니다.
+
+```powershell
+conda activate param_lattice
+python -m pip install -U pip
+python -m pip install -e ".[all,dev]"
+```
+
+### 3) 테스트
+
+```powershell
+conda activate param_lattice
+pytest
+```
+
+## Excel(xlwings) 사용 방법
+
+이 저장소의 `simulation.xlsm`은 xlwings 매크로를 통해 Python 코드를 호출합니다.
+
+### 1) xlwings Add-in 설치
+
+Conda 환경을 활성화한 뒤 Add-in을 설치합니다.
+
+```powershell
+conda activate param_lattice
+xlwings addin install
+```
+
+설치 후 Excel을 재시작하세요.
+
+### 2) Excel이 사용할 Python 인터프리터 지정
+
+Excel에서 실행되는 xlwings가 **`param_lattice`** 환경의 Python을 사용하도록 지정해야 합니다.
+
+- Excel에서 `simulation.xlsm` 열기
+- **xlwings** 리본(또는 메뉴)에서 Interpreter / Python 경로 설정
+  - 권장: `...\envs\param_lattice\pythonw.exe` (Excel 실행 시 콘솔창/포커스 이슈를 줄이기 위함)
+  - 허용: `...\envs\param_lattice\python.exe`
+  - 예: `C:\Users\<USER>\.conda\envs\param_lattice\pythonw.exe`
+
+참고:
+- Interpreter를 위처럼 **환경의 python(w).exe로 직접 지정**했다면, xlwings 설정의 `PYTHONPATH`, `Conda path`, `Conda env`는 비어 있어도 동작하는 경우가 많습니다.
+- (필요 시) `PYTHONPATH`에 `...\parametric_lattice\src`를 추가하면 import 문제를 줄일 수 있습니다.
+- `UDF Modules`는 `simulation`으로 두는 것을 권장합니다(이 파일에 `@xw.sub` 엔트리포인트가 있음).
+
+### 3) 버튼(매크로) 실행
+
+`simulation.xlsm`은 시트에 있는 **버튼**을 눌러 xlwings 매크로를 실행하도록 구성할 수 있습니다.
+
+- 버튼이 호출하는 대표 매크로(= `simulation.py`의 `@xw.sub`):
+  - 선택 행만 실행: `sub_run_selected`
+  - 전체 실행: `sub_run_all`
+  - 결과 폴더 열기: `sub_open_results`
+  - 아티팩트 폴더 열기: `sub_open_case_artifacts`
+
+버튼이 동작하지 않거나 연결이 끊겼다면:
+- (일반) 버튼/도형 우클릭 → **매크로 지정(Assign Macro)** → 위 매크로 중 하나 선택
+- (개발) `simulation.py`에서 `@xw.sub`로 정의된 함수명이 Excel에서 선택 가능한 매크로 이름입니다.
+
+실행 결과는 기본적으로 아래에 생성됩니다.
+
+- `results/case/<case_hash>/...`
+- `artifacts/case/<case_hash>/sim_case.json`
+
+## 흔한 문제
+
+### 매크로가 차단됨
+
+- Excel 보안 경고에서 매크로 사용(Enable Content) 허용
+- 필요 시 파일을 신뢰할 수 있는 위치(Trusted Location)로 옮기기
+
+### Excel이 다른 Python을 사용함 / 모듈을 못 찾음
+
+- xlwings Interpreter가 `param_lattice`의 `pythonw.exe`를 가리키는지 확인
+- `conda activate param_lattice` 후 `python -c "import xlwings; import numpy"` 등으로 설치 확인
+
+### MAPDL 연결/라이선스 문제
+
+- `ansys-mapdl-core`는 Python 클라이언트이며, 실제 MAPDL 실행/라이선스는 별도 설치/설정이 필요합니다.
