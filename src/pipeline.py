@@ -6,8 +6,16 @@ from core.apdl_commands import ApdlCommands
 from core.lattice import Lattice
 from core.parameters.sim_case import SimCase
 from core.unit_cell import UnitCell
+from custom_io.geometry_io import (
+    export_geometry_db,
+    export_geometry_iges,
+)
 from custom_io.lattice_io import export_lattice
 from custom_io.lgf_io import import_lgf
+from custom_io.mesh_io import (
+    export_mesh_cdb,
+    export_mesh_db,
+)
 from element_type.pipeline import element_type_commands
 from geometry.pipeline import geometry_commands
 from material.pipeline import material_commands
@@ -17,7 +25,6 @@ from preprocess.pipeline import (
     lgf_to_lattice,
 )
 from profile_.pipeline import profile_commands
-from results.pipeline import results_commands
 from setup.pipeline import setup_commands
 from solve.pipeline import solver_commands
 
@@ -25,6 +32,7 @@ from solve.pipeline import solver_commands
 def build_pipeline(
     unit_cell: UnitCell | SimCase,
     sim_case: SimCase | None = None,
+    save_intermediate: bool = False,
 ) -> ApdlCommands:
     """Build a flattened APDL command sequence.
 
@@ -40,10 +48,11 @@ def build_pipeline(
                 sim_case.pre_mesh_spec.geometry.cell_name
             )
         )
-        export_lattice(
-            sim_case.pre_mesh_spec.geometry.cell_name,
-            lattice,
-        )
+        if save_intermediate:
+            export_lattice(
+                sim_case.pre_mesh_spec.geometry.cell_name,
+                lattice,
+            )
         unit_cell = lattice_to_unit_cell(lattice)
     else:
         if sim_case is None:
@@ -70,12 +79,16 @@ def build_pipeline(
             sim_case.pre_mesh_spec.geometry,
             sim_case.pre_mesh_spec.profile,
         )
+        + (export_geometry_db(sim_case) if save_intermediate else ())
+        + (export_geometry_iges(sim_case) if save_intermediate else ())
         + meshing_commands(
             unit_cell,
             sim_case.pre_mesh_spec.geometry,
             sim_case.pre_mesh_spec.profile,
             sim_case.pre_mesh_spec.meshing,
         )
+        + (export_mesh_db(sim_case) if save_intermediate else ())
+        + (export_mesh_cdb(sim_case) if save_intermediate else ())
         + material_commands(
             sim_case.post_mesh_spec.material
         )
@@ -86,6 +99,4 @@ def build_pipeline(
             sim_case.post_mesh_spec.setup,
         )
         + solver_commands(sim_case.post_mesh_spec.setup)
-        # results_commands()
-        + ("FINISH",)
     )

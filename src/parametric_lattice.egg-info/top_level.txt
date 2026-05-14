@@ -1,11 +1,12 @@
 core
 custom_io
 element_type
+excel_integration
 geometry
 material
 meshing
+postprocess
 preprocess
 profile_
-results
 setup
 solve

@@ -17,3 +17,5 @@ results/
 # Tests (ignored)
 tests/
 .pytest_cache/
+
+AGENTS.md

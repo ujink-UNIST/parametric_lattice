@@ -105,7 +105,7 @@ def build_sim_case(
 def generate_apdl_commands(
     sim_case: SimCase,
 ) -> ApdlCommands:
-    return build_pipeline(sim_case)
+    return build_pipeline(sim_case, save_intermediate=False)
 
 
 def generate_apdl_text(
