@@ -160,7 +160,9 @@ def run_cases(inputs: Tuple[SimCase, ...]):
         case_hash = build_case_hash(case_key)
 
         run_dir = base_run_dir / f"{case_hash}"
-        jobname = f"case_{case_hash}"
+        # Use a stable, non-hash jobname so result filenames don't include the case hash.
+        # The run_dir is already namespaced by case_hash.
+        jobname = "case"
 
         run_dir.mkdir(parents=True, exist_ok=True)
 
