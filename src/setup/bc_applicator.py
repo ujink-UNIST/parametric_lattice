@@ -1,11 +1,4 @@
-# bc_applicator.py
-
-﻿# File: c:\Users\USER\Documents\parametric_lattice\src\setup\bc_applicator.py
-# Author: 김우진 (ujink1225@unist.ac.kr)
-# Company: UNIST UCIM Lab
-# Created: Wed Apr 29 2026
-# Modified: Wed Apr 29 2026
-
+﻿# bc_applicator.py
 
 """Boundary-condition command builders for beam and solid models."""
 
