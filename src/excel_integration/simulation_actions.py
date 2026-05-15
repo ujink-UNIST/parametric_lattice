@@ -1,0 +1,145 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Protocol
+
+import xlwings as xw
+
+from custom_io.excel_io import (
+    build_case_hash,
+    find_table,
+    get_table_data,
+    run_selected,
+    run_selected_postprocess,
+    selected_input_indices,
+    _get_simulation_cases,
+)
+
+
+class Messenger(Protocol):
+    def info(self, text: str) -> None: ...
+
+
+@dataclass(frozen=True)
+class ExcelMessenger:
+    book: xw.Book
+
+    def info(self, text: str) -> None:
+        # MsgBox is a VBA intrinsic, not an Excel Application COM method,
+        # so call it via Application.Run.
+        try:
+            self.book.app.api.Run("MsgBox", str(text))
+            return
+        except Exception:
+            pass
+
+        # Fallback: native Windows message box
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                str(text),
+                "parametric_lattice",
+                0,
+            )
+        except Exception:
+            print(text)
+
+
+class Explorer:
+    @staticmethod
+    def open_folder(path: Path) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        import os
+
+        os.startfile(str(path.resolve()))
+
+    @staticmethod
+    def select_file(path: Path) -> None:
+        import subprocess
+
+        p = path.resolve()
+        subprocess.Popen(f'explorer /select,"{p}"')
+
+
+def _first_selected_index(book: xw.Book) -> int | None:
+    idxs = selected_input_indices(book)
+    if not idxs:
+        return None
+    return int(idxs[0])
+
+
+def _get_case_hash_and_lattice_relpath(
+    book: xw.Book,
+    row_idx: int,
+) -> tuple[str, str]:
+    input_table = find_table(book, "t_input")
+    header, body = get_table_data(input_table)
+    inputs = _get_simulation_cases(header, body)
+
+    if row_idx < 0 or row_idx >= len(inputs):
+        raise IndexError(f"Row index out of range: {row_idx}")
+
+    sim_case = inputs[row_idx]
+    case_hash = build_case_hash(sim_case.to_string())
+    lattice_rel = sim_case.pre_mesh_spec.geometry.cell_name
+    return case_hash, lattice_rel
+
+
+def run_selected_action(book: xw.Book) -> None:
+    selected_indices = selected_input_indices(book)
+    run_selected(book, selected_indices)
+
+
+def run_all_action(book: xw.Book) -> None:
+    run_selected(book, None)
+
+
+def run_selected_postprocess_action(book: xw.Book) -> None:
+    selected_indices = selected_input_indices(book)
+    run_selected_postprocess(book, selected_indices)
+
+
+def open_lattice_file_action(repo_root: Path, book: xw.Book) -> None:
+    msg = ExcelMessenger(book)
+
+    row_idx = _first_selected_index(book)
+    if row_idx is None:
+        msg.info("t_input에서 열(row)을 선택한 뒤 실행하세요.")
+        return
+
+    _, lattice_rel = _get_case_hash_and_lattice_relpath(book, row_idx)
+    lattice_path = repo_root / "lgf" / lattice_rel
+    if not lattice_path.exists():
+        msg.info(f"LGF 파일을 찾을 수 없습니다: {lattice_path}")
+        return
+
+    Explorer.select_file(lattice_path)
+
+
+def open_case_artifacts_action(repo_root: Path, book: xw.Book) -> None:
+    msg = ExcelMessenger(book)
+
+    row_idx = _first_selected_index(book)
+    if row_idx is None:
+        msg.info("t_input에서 열(row)을 선택한 뒤 실행하세요.")
+        return
+
+    case_hash, _ = _get_case_hash_and_lattice_relpath(book, row_idx)
+    artifacts_dir = repo_root / "artifacts" / "case" / case_hash
+    Explorer.open_folder(artifacts_dir)
+
+
+def open_results_action(repo_root: Path, book: xw.Book) -> None:
+    msg = ExcelMessenger(book)
+
+    row_idx = _first_selected_index(book)
+    if row_idx is None:
+        msg.info("t_input에서 열(row)을 선택한 뒤 실행하세요.")
+        return
+
+    case_hash, _ = _get_case_hash_and_lattice_relpath(book, row_idx)
+    results_dir = repo_root / "results" / "case" / case_hash
+    Explorer.open_folder(results_dir)

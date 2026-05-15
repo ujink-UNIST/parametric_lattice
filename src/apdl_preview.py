@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -33,70 +33,65 @@ from preprocess.pipeline import (
 )
 
 
-@dataclass(frozen=True)
-class SimCaseInput:
-    sim_type: str
-    size_xyz: tuple[float, float, float]
-    radius: float
-    e_mod: float
-    nu: float
-    density: float
-    max_element_size: float
-    strain: float
-    n_substeps: int = 1
-    kappa: float = 0.85
-    element_type: str = "BEAM188"
-    row_idx: int = 0
-
-
 def load_unit_cell(cell_name: str) -> UnitCell:
     lgf_lines = import_lgf(cell_name)
-    unit_cell = lattice_to_unit_cell(
-        lgf_to_lattice(lgf_lines)
-    )
+    unit_cell = lattice_to_unit_cell(lgf_to_lattice(lgf_lines))
     return replace(unit_cell, name=cell_name)
 
 
 def build_sim_case(
     cell_name: str,
-    sim_input: SimCaseInput,
+    *,
+    sim_type: str,
+    size_xyz: tuple[float, float, float],
+    radius: float,
+    e_mod: float,
+    nu: float,
+    density: float,
+    max_element_size: float,
+    strain: float,
+    n_substeps: int = 1,
+    kappa: float = 0.85,
+    element_type: str = "BEAM188",
+    row_idx: int = 0,
+    # Joint strengthening factors (beam-only)
+    joint_area_factor: float = 1.0,
+    joint_length_factor: float = 1.0,
+    joint_bending_factor: float = 1.0,
+    joint_torsion_factor: float = 1.0,
 ) -> SimCase:
     return SimCase(
-        row_idx=sim_input.row_idx,
+        row_idx=row_idx,
         pre_mesh_spec=PreMeshSpec(
-            element_type=ElementTypeParams(
-                model=sim_input.element_type
-            ),
+            element_type=ElementTypeParams(model=element_type),
             profile=(
                 BeamProfileParams(
-                    radius=sim_input.radius,
-                    kappa=sim_input.kappa,
+                    radius=radius,
+                    kappa=kappa,
+                    joint_area_factor=joint_area_factor,
+                    joint_length_factor=joint_length_factor,
+                    joint_bending_factor=joint_bending_factor,
+                    joint_torsion_factor=joint_torsion_factor,
                 )
-                if "BEAM" in sim_input.element_type.upper()
-                else SolidProfileParams(
-                    radius=sim_input.radius
-                )
+                if "BEAM" in element_type.upper()
+                else SolidProfileParams(radius=radius)
             ),
             geometry=GeometryParams(
                 cell_name=cell_name,
-                size=np.array(
-                    sim_input.size_xyz, dtype=float
-                ),
+                size=np.array(size_xyz, dtype=float),
             ),
-            meshing=MeshingParams(
-                max_element_size=sim_input.max_element_size
-            ),
+            meshing=MeshingParams(max_element_size=max_element_size),
         ),
         post_mesh_spec=PostMeshSpec(
             material=MaterialParams(
-                e_mod=sim_input.e_mod,
-                nu=sim_input.nu,
-                density=sim_input.density,
+                e_mod=e_mod,
+                nu=nu,
+                density=density,
             ),
             setup=SetupParams(
-                sim_type=sim_input.sim_type,
-                strain=sim_input.strain,
-                n_substeps=sim_input.n_substeps,
+                sim_type=sim_type,
+                strain=strain,
+                n_substeps=n_substeps,
             ),
         ),
     )
@@ -105,7 +100,7 @@ def build_sim_case(
 def generate_apdl_commands(
     sim_case: SimCase,
 ) -> ApdlCommands:
-    return build_pipeline(sim_case)
+    return build_pipeline(sim_case, save_intermediate=False)
 
 
 def generate_apdl_text(

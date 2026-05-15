@@ -10,7 +10,6 @@ if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
 from apdl_preview import (  # noqa: E402
-    SimCaseInput,
     build_sim_case,
     generate_apdl_commands,
     generate_apdl_text,
@@ -46,7 +45,6 @@ def reload_project_modules():
     return importlib.reload(sys.modules[__name__])
 
 __all__ = [
-    "SimCaseInput",
     "build_sim_case",
     "generate_apdl_commands",
     "generate_apdl_text",
