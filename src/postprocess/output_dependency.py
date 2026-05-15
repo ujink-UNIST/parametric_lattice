@@ -17,6 +17,8 @@ from __future__ import annotations
 # key: output prefix
 # value: tuple of prerequisite output prefixes that must be computed first
 OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
+    # boundary_traction is derived from boundary_force (+ geometry face areas)
+    "boundary_traction": ("boundary_force",),
     # boundary_stress can only be computed if boundary_traction is available
     "boundary_stress": ("boundary_traction",),
 }

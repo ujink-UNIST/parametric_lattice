@@ -30,9 +30,7 @@ def build_beam_orientation_keypoint_commands_(
     count: int = unit_cell.edges.shape[0]
     digits = len(str(count - 1))
 
-    for edge_index, (edge, normal) in enumerate(
-        zip(unit_cell.edges, normals)
-    ):
+    for edge_index, (edge, normal) in enumerate(zip(unit_cell.edges, normals)):
         n1_idx: int
         n2_idx: int
 
@@ -40,18 +38,16 @@ def build_beam_orientation_keypoint_commands_(
         n2_idx = int(edge[1])
 
         start = transform_coords(
-            cast(Vector3, unit_cell.nodes[n1_idx]),
+            unit_cell.nodes[n1_idx],
             geometry_params.size,
         )
         end = transform_coords(
-            cast(Vector3, unit_cell.nodes[n2_idx]),
+            unit_cell.nodes[n2_idx],
             geometry_params.size,
         )
-        tangent: Vector3 = end - start
-        normal = cast(
-            Vector3, normal / np.linalg.norm(normal)
-        )
-        binormal: Vector3 = np.cross(normal, tangent)
+        tangent = end - start
+        normal = normal / np.linalg.norm(normal)
+        binormal = np.cross(normal, tangent)
         binormal = binormal / np.linalg.norm(binormal)
 
         length = np.linalg.norm(tangent) * 0.1

@@ -14,6 +14,9 @@ from postprocess.boundary_command import (
     build_boundary_stress_commands_,
     build_boundary_traction_commands_,
 )
+from postprocess.force_command import (
+    build_boundary_force_moment_commands_,
+)
 from postprocess.dependency_resolver import (
     expand_prefixes,
     topo_sort,
@@ -39,15 +42,11 @@ _HANDLERS: dict[str, PostprocessHandler] = {
     "index": _noop,
     "hash": _noop,
     # Actual MAPDL postprocess blocks
-    "boundary_traction": lambda _ctx: build_boundary_traction_commands_(
-        _ctx
-    ),
-    "boundary_stress": lambda _ctx: build_boundary_stress_commands_(
-        _ctx
-    ),
-    "volume_stress": lambda _ctx: build_volume_stress_commands_(
-        _ctx
-    ),
+    "boundary_traction": lambda _ctx: build_boundary_traction_commands_(_ctx),
+    "boundary_force": lambda _ctx: build_boundary_force_moment_commands_(_ctx),
+    "boundary_moment": lambda _ctx: build_boundary_force_moment_commands_(_ctx),
+    "boundary_stress": lambda _ctx: build_boundary_stress_commands_(_ctx),
+    "volume_stress": lambda _ctx: build_volume_stress_commands_(_ctx),
 }
 
 

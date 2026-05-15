@@ -38,6 +38,7 @@ from custom_io.apdl_io import mapdl_session, run_commands
 from custom_io.excel_read import (
     read_float,
     read_int,
+    read_optional_bool,
     read_optional_float,
     read_str,
     read_Vector3,
@@ -83,13 +84,9 @@ def run_selected(
     input_table: Table = find_table(book, _INPUT_TABLE)
     input_header, input_body = get_table_data(input_table)
 
-    inputs: Tuple[SimCase, ...] = _get_simulation_cases(
-        input_header, input_body
-    )
+    inputs: Tuple[SimCase, ...] = _get_simulation_cases(input_header, input_body)
 
-    hashes = [
-        build_case_hash(sc.to_string()) for sc in inputs
-    ]
+    hashes = [build_case_hash(sc.to_string()) for sc in inputs]
 
     # Write case hashes back into the Excel input table (t_input) so each row
     # records the exact case identifier used on disk.
@@ -120,18 +117,12 @@ def run_selected_postprocess(
     input_table: Table = find_table(book, _INPUT_TABLE)
     input_header, input_body = get_table_data(input_table)
 
-    inputs: Tuple[SimCase, ...] = _get_simulation_cases(
-        input_header, input_body
-    )
+    inputs: Tuple[SimCase, ...] = _get_simulation_cases(input_header, input_body)
 
-    hashes = [
-        build_case_hash(sc.to_string()) for sc in inputs
-    ]
+    hashes = [build_case_hash(sc.to_string()) for sc in inputs]
 
     output_table: Table = find_table(book, _OUTPUT_TABLE)
-    output_header, output_body = get_table_data(
-        output_table
-    )
+    output_header, output_body = get_table_data(output_table)
 
     _write_index_hash_to_output_table(
         book,
@@ -142,7 +133,7 @@ def run_selected_postprocess(
     )
 
     if selected_indices is None:
-        run_postprocess(inputs, output_header)
+        run_postprocess(book, inputs, output_header)
         return
 
     selected: list[SimCase] = []
@@ -151,7 +142,7 @@ def run_selected_postprocess(
         if i in selected_set:
             selected.append(sim_case)
 
-    run_postprocess(tuple(selected), output_header)
+    run_postprocess(book, tuple(selected), output_header)
 
 
 def run_all(book: xw.Book) -> None:
@@ -188,9 +179,7 @@ def selected_input_indices(
     # xlwings Range may or may not expose .areas depending on backend/typing.
     sel_any: Any = sel
     areas_obj = getattr(sel_any, "areas", None)
-    areas = (
-        areas_obj if areas_obj is not None else [sel_any]
-    )
+    areas = areas_obj if areas_obj is not None else [sel_any]
 
     idxs: set[int] = set()
     for area in areas:
@@ -224,14 +213,8 @@ def run_cases(
         run_dir.mkdir(parents=True, exist_ok=True)
 
         # Save sim_case metadata alongside results for reproducibility.
-        sim_case_path = (
-            case_artifacts_root
-            / case_hash
-            / "sim_case.json"
-        )
-        sim_case_path.parent.mkdir(
-            parents=True, exist_ok=True
-        )
+        sim_case_path = case_artifacts_root / case_hash / "sim_case.json"
+        sim_case_path.parent.mkdir(parents=True, exist_ok=True)
         sim_case_path.write_text(
             json.dumps(
                 {
@@ -241,11 +224,7 @@ def run_cases(
                 },
                 ensure_ascii=False,
                 indent=2,
-                default=lambda o: (
-                    o.tolist()
-                    if hasattr(o, "tolist")
-                    else vars(o)
-                ),
+                default=lambda o: (o.tolist() if hasattr(o, "tolist") else vars(o)),
             ),
             encoding="utf-8",
         )
@@ -268,6 +247,7 @@ def run_cases(
 
 
 def run_postprocess(
+    book: xw.Book,
     inputs: Tuple[SimCase, ...],
     output_header: Header,
 ) -> None:
@@ -294,9 +274,7 @@ def run_postprocess(
         if "_" in name:
             prefix, suffix = name.rsplit("_", 1)
             if suffix in _DIR_COMPONENTS:
-                component_sets.setdefault(
-                    prefix, set()
-                ).add(suffix)
+                component_sets.setdefault(prefix, set()).add(suffix)
                 continue
 
         # Scalar output column
@@ -321,11 +299,16 @@ def run_postprocess(
     # Ensure required scalar columns exist.
     for req in ("index", "hash"):
         if req not in needed:
-            raise ValueError(
-                f"t_output is missing required scalar column {req!r}."
-            )
+            raise ValueError(f"t_output is missing required scalar column {req!r}.")
 
-    # Run per-case postprocess APDL.
+    # Prepare output table writer.
+    from custom_io.excel_write import (
+        write_Vector3x3,
+    )
+
+    output_table: Table = find_table(book, _OUTPUT_TABLE)
+
+    # Run per-case postprocess APDL and write requested results back to t_output.
     for sim_case in inputs:
         case_key = sim_case.to_string()
         case_hash = build_case_hash(case_key)
@@ -345,7 +328,37 @@ def run_postprocess(
                     needed=needed,
                 )
                 run_commands(mapdl, pipeline)
-                # TODO: parse postprocess outputs and write to t_output via hash matching.
+
+                # Write outputs
+                row0 = int(sim_case.row_idx)
+
+                if "boundary_traction" in needed:
+                    # Mapdl parameters created by postprocess.boundary_command
+                    bt = mapdl.parameters["pp_boundary_traction"]
+                    write_Vector3x3(
+                        output_table,
+                        row0,
+                        "boundary_traction",
+                        bt,
+                    )
+
+                if "boundary_force" in needed:
+                    bf = mapdl.parameters["pp_boundary_force"]
+                    write_Vector3x3(
+                        output_table,
+                        row0,
+                        "boundary_force",
+                        bf,
+                    )
+
+                if "boundary_moment" in needed:
+                    bm = mapdl.parameters["pp_boundary_moment"]
+                    write_Vector3x3(
+                        output_table,
+                        row0,
+                        "boundary_moment",
+                        bm,
+                    )
         except Exception as e:
             print(f"Error: {e}")
             raise
@@ -458,10 +471,7 @@ def find_table(
 ) -> Table:
     for sheet in book.sheets:
         for table in sheet.tables:
-            if (
-                table.name == key
-                or table.display_name == key
-            ):
+            if table.name == key or table.display_name == key:
                 return table
 
     raise KeyError(f"Could not find Excel table {key!r}")
@@ -546,9 +556,7 @@ def _validate_header_key(header: Any) -> str:
 
     normalized = _normalize_header_key(s)
     if s != normalized:
-        raise ValueError(
-            f"Excel header {s!r} is not in canonical form {normalized!r}."
-        )
+        raise ValueError(f"Excel header {s!r} is not in canonical form {normalized!r}.")
 
     return s
 
@@ -560,68 +568,53 @@ def _get_simulation_cases(
     cases: List[SimCase] = []
 
     for i, row in enumerate(input_body):
-        row_values = _map_header_to_row_values(
-            input_header, row
-        )
+        row_values = _map_header_to_row_values(input_header, row)
 
         cases.append(
             SimCase(
                 row_idx=i,
                 pre_mesh_spec=PreMeshSpec(
                     element_type=ElementTypeParams(
-                        model=read_str(
-                            row_values, "element_type"
-                        )
+                        model=read_str(row_values, "element_type")
                     ),
                     profile=build_profile_params(
-                        element_model=read_str(
-                            row_values, "element_type"
+                        element_model=read_str(row_values, "element_type"),
+                        radius=read_float(row_values, "radius_multiplier"),
+                        kappa=read_optional_float(row_values, "kappa"),
+                        joint_area_factor=(
+                            read_optional_float(row_values, "joint_area_factor") or 1.0
                         ),
-                        radius=read_float(
-                            row_values, "radius_multiplier"
+                        joint_length_factor=(
+                            read_optional_float(row_values, "joint_length_factor")
+                            or 1.0
                         ),
-                        kappa=read_optional_float(
-                            row_values, "kappa"
+                        joint_bending_factor=(
+                            read_optional_float(row_values, "joint_bending_factor")
+                            or 1.0
+                        ),
+                        joint_torsion_factor=(
+                            read_optional_float(row_values, "joint_torsion_factor")
+                            or 1.0
                         ),
                     ),
                     geometry=GeometryParams(
-                        cell_name=resolve_cell_name(
-                            read_str(
-                                row_values, "cell_name"
-                            )
-                        ),
-                        size=read_Vector3(
-                            row_values, "cell_size"
-                        ),
+                        cell_name=resolve_cell_name(read_str(row_values, "cell_name")),
+                        size=read_Vector3(row_values, "cell_size"),
                     ),
                     meshing=MeshingParams(
-                        max_element_size=read_float(
-                            row_values, "max_element_size"
-                        )
+                        max_element_size=read_float(row_values, "max_element_size")
                     ),
                 ),
                 post_mesh_spec=PostMeshSpec(
                     material=MaterialParams(
-                        e_mod=read_float(
-                            row_values, "elastic_modulus"
-                        ),
-                        nu=read_float(
-                            row_values, "poisson_ratio"
-                        ),
-                        density=read_float(
-                            row_values, "density"
-                        ),
+                        e_mod=read_float(row_values, "elastic_modulus"),
+                        nu=read_float(row_values, "poisson_ratio"),
+                        density=read_float(row_values, "density"),
                     ),
                     setup=SetupParams(
-                        sim_type=read_str(
-                            row_values, "simulation_type"
-                        ),
-                        strain=read_float(
-                            row_values, "strain"
-                        ),
-                        n_substeps=read_int(
-                            row_values, "substeps"
-                        ),
+                        sim_type=read_str(row_values, "simulation_type"),
+                        strain=read_float(row_values, "strain"),
+                        n_substeps=read_int(row_values, "substeps"),
                     ),
                 ),
             )
@@ -636,17 +629,13 @@ def _map_header_to_row_values(
 ) -> Dict[str, Any]:
     if len(input_header) != len(row):
         raise ValueError(
-            "Header and row lengths do not match: "
-            f"{len(input_header)} != {len(row)}"
+            "Header and row lengths do not match: " f"{len(input_header)} != {len(row)}"
         )
 
     keys = [_validate_header_key(h) for h in input_header]
 
     if len(set(keys)) != len(keys):
         dupes = {k for k in keys if keys.count(k) > 1}
-        raise ValueError(
-            "Duplicate Excel headers: "
-            + ", ".join(sorted(dupes))
-        )
+        raise ValueError("Duplicate Excel headers: " + ", ".join(sorted(dupes)))
 
     return dict(zip(keys, row))

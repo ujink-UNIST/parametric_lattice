@@ -17,39 +17,27 @@ def _face_area(ctx: PostprocessContext, axis: str) -> float:
 
 
 def build_boundary_traction_commands_(ctx: PostprocessContext) -> ApdlCommands:
-    """Compute boundary traction as a 3x3 matrix in MAPDL parameters.
+    """Compute boundary traction from `pp_boundary_force`.
+
+    Dependency:
+      This output depends on `boundary_force` having run first, which defines
+      `pp_boundary_force(face, comp)` where face={X,Y,Z} and comp={X,Y,Z}.
 
     Definition:
-      For each axis A in {X,Y,Z}, compute average traction vector on +A and -A
-      periodic faces using nodal reaction force sums:
+      traction(face, comp) = boundary_force(face, comp) / A_face
 
-        tP = FP / A_face
-        tN = FN / A_face
-        tA = (tP - tN) / 2
-
-      Store into a 3x3 array pp_boundary_traction such that:
-        - column = face normal axis (X=1, Y=2, Z=3)
+    Storage:
+      pp_boundary_traction(comp, face) is kept for backward compatibility with
+      existing Excel naming (boundary_traction_XX..ZZ):
         - row    = traction component (X=1, Y=2, Z=3)
-
-      So pp_boundary_traction(1,1) corresponds to boundary_traction_XX,
-      pp_boundary_traction(1,2) to boundary_traction_XY, etc.
-
-    Requirements:
-      Node components exist:
-        PERIODIC_NODES_PX/NX/PY/NY/PZ/NZ
-
-    Note:
-      This function only prepares MAPDL parameters; writing to Excel is handled
-      by python (excel_io) after reading these parameters back.
+        - column = face normal axis (X=1, Y=2, Z=3)
     """
 
     ax = _face_area(ctx, "X")
     ay = _face_area(ctx, "Y")
     az = _face_area(ctx, "Z")
 
-    cmd: list[str] = []
-
-    cmd += [
+    cmd: list[str] = [
         apdl_command("/POST1", "postprocess: boundary traction"),
         apdl_command("SET,LAST", "use last substep"),
         apdl_command("ALLSEL,ALL"),
@@ -60,53 +48,18 @@ def build_boundary_traction_commands_(ctx: PostprocessContext) -> ApdlCommands:
         apdl_command(
             f"! Face areas from geometry.size: AX={ax:g}, AY={ay:g}, AZ={az:g}"
         ),
-    ]
-
-    def face_sum(comp: str, tag: str) -> list[str]:
-        # tag: e.g. PX, NX ... used for parameter names.
-        return [
-            apdl_command(f"CMSEL,S,{comp}", f"select {comp}"),
-            apdl_command("FSUM", "sum nodal forces"),
-            apdl_command(f"*GET,pp_FX_{tag},FSUM,0,ITEM,FX"),
-            apdl_command(f"*GET,pp_FY_{tag},FSUM,0,ITEM,FY"),
-            apdl_command(f"*GET,pp_FZ_{tag},FSUM,0,ITEM,FZ"),
-            apdl_command("ALLSEL,ALL"),
-        ]
-
-    # X faces
-    cmd += face_sum("PERIODIC_NODES_PX", "PX")
-    cmd += face_sum("PERIODIC_NODES_NX", "NX")
-    cmd += [
-        apdl_command(f"pp_Tx_X = (pp_FX_PX/{ax:g} - pp_FX_NX/{ax:g})/2"),
-        apdl_command(f"pp_Ty_X = (pp_FY_PX/{ax:g} - pp_FY_NX/{ax:g})/2"),
-        apdl_command(f"pp_Tz_X = (pp_FZ_PX/{ax:g} - pp_FZ_NX/{ax:g})/2"),
-        apdl_command("pp_boundary_traction(1,1)=pp_Tx_X"),
-        apdl_command("pp_boundary_traction(2,1)=pp_Ty_X"),
-        apdl_command("pp_boundary_traction(3,1)=pp_Tz_X"),
-    ]
-
-    # Y faces
-    cmd += face_sum("PERIODIC_NODES_PY", "PY")
-    cmd += face_sum("PERIODIC_NODES_NY", "NY")
-    cmd += [
-        apdl_command(f"pp_Tx_Y = (pp_FX_PY/{ay:g} - pp_FX_NY/{ay:g})/2"),
-        apdl_command(f"pp_Ty_Y = (pp_FY_PY/{ay:g} - pp_FY_NY/{ay:g})/2"),
-        apdl_command(f"pp_Tz_Y = (pp_FZ_PY/{ay:g} - pp_FZ_NY/{ay:g})/2"),
-        apdl_command("pp_boundary_traction(1,2)=pp_Tx_Y"),
-        apdl_command("pp_boundary_traction(2,2)=pp_Ty_Y"),
-        apdl_command("pp_boundary_traction(3,2)=pp_Tz_Y"),
-    ]
-
-    # Z faces
-    cmd += face_sum("PERIODIC_NODES_PZ", "PZ")
-    cmd += face_sum("PERIODIC_NODES_NZ", "NZ")
-    cmd += [
-        apdl_command(f"pp_Tx_Z = (pp_FX_PZ/{az:g} - pp_FX_NZ/{az:g})/2"),
-        apdl_command(f"pp_Ty_Z = (pp_FY_PZ/{az:g} - pp_FY_NZ/{az:g})/2"),
-        apdl_command(f"pp_Tz_Z = (pp_FZ_PZ/{az:g} - pp_FZ_NZ/{az:g})/2"),
-        apdl_command("pp_boundary_traction(1,3)=pp_Tx_Z"),
-        apdl_command("pp_boundary_traction(2,3)=pp_Ty_Z"),
-        apdl_command("pp_boundary_traction(3,3)=pp_Tz_Z"),
+        apdl_command("! traction on X faces from pp_boundary_force row 1"),
+        apdl_command(f"pp_boundary_traction(1,1)=pp_boundary_force(1,1)/{ax:g}"),
+        apdl_command(f"pp_boundary_traction(2,1)=pp_boundary_force(1,2)/{ax:g}"),
+        apdl_command(f"pp_boundary_traction(3,1)=pp_boundary_force(1,3)/{ax:g}"),
+        apdl_command("! traction on Y faces from pp_boundary_force row 2"),
+        apdl_command(f"pp_boundary_traction(1,2)=pp_boundary_force(2,1)/{ay:g}"),
+        apdl_command(f"pp_boundary_traction(2,2)=pp_boundary_force(2,2)/{ay:g}"),
+        apdl_command(f"pp_boundary_traction(3,2)=pp_boundary_force(2,3)/{ay:g}"),
+        apdl_command("! traction on Z faces from pp_boundary_force row 3"),
+        apdl_command(f"pp_boundary_traction(1,3)=pp_boundary_force(3,1)/{az:g}"),
+        apdl_command(f"pp_boundary_traction(2,3)=pp_boundary_force(3,2)/{az:g}"),
+        apdl_command(f"pp_boundary_traction(3,3)=pp_boundary_force(3,3)/{az:g}"),
     ]
 
     return tuple(cmd)

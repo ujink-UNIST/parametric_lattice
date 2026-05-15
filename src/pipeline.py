@@ -44,9 +44,7 @@ def build_pipeline(
     if isinstance(unit_cell, SimCase):
         sim_case = unit_cell
         lattice: Lattice = lgf_to_lattice(
-            import_lgf(
-                sim_case.pre_mesh_spec.geometry.cell_name
-            )
+            import_lgf(sim_case.pre_mesh_spec.geometry.cell_name)
         )
         if save_intermediate:
             export_lattice(
@@ -56,9 +54,7 @@ def build_pipeline(
         unit_cell = lattice_to_unit_cell(lattice)
     else:
         if sim_case is None:
-            raise TypeError(
-                "build_pipeline(unit_cell, sim_case) missing sim_case"
-            )
+            raise TypeError("build_pipeline(unit_cell, sim_case) missing sim_case")
 
     pre = (
         "/CLEAR,START",
@@ -68,11 +64,12 @@ def build_pipeline(
 
     return (
         pre
-        + element_type_commands(
-            sim_case.pre_mesh_spec.element_type
-        )
+        + element_type_commands(sim_case.pre_mesh_spec.element_type)
         + geometry_commands(
-            unit_cell, sim_case.pre_mesh_spec.geometry
+            unit_cell,
+            sim_case.pre_mesh_spec.element_type,
+            sim_case.pre_mesh_spec.geometry,
+            sim_case.pre_mesh_spec.profile,
         )
         + profile_commands(
             unit_cell,
@@ -89,9 +86,7 @@ def build_pipeline(
         )
         + (export_mesh_db(sim_case) if save_intermediate else ())
         + (export_mesh_cdb(sim_case) if save_intermediate else ())
-        + material_commands(
-            sim_case.post_mesh_spec.material
-        )
+        + material_commands(sim_case.post_mesh_spec.material)
         + setup_commands(
             unit_cell,
             sim_case.pre_mesh_spec.profile,

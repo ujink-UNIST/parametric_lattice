@@ -17,6 +17,7 @@ from excel_integration.simulation_actions import (
     open_results_action,
     run_all_action,
     run_selected_action,
+    run_selected_postprocess_action,
 )
 
 
@@ -40,6 +41,11 @@ def sub_run_all():
 
 
 @xw.sub
+def sun_run_selected_postprocess():
+    run_selected_postprocess_action(xw.Book.caller())
+
+
+@xw.sub
 def sub_open_lattice_file():
     open_lattice_file_action(root, xw.Book.caller())
 
@@ -59,4 +65,3 @@ def main() -> None:
     # Note: Book.caller() only works when called from Excel.
     run_all_action(xw.Book.caller())
     _pause_to_close()
-

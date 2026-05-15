@@ -70,6 +70,35 @@ def read_int(row: Dict[str, Any], key: str) -> int:
         raise ValueError(f"Excel value for {key!r} is not an int: {v!r}") from e
 
 
+def read_optional_bool(row: Dict[str, Any], key: str) -> bool | None:
+    """Read an optional boolean from an Excel cell.
+
+    Accepts:
+      - bool
+      - 0/1 numbers
+      - strings: true/false, yes/no, y/n, 0/1 (case-insensitive)
+    """
+
+    v = read_optional(row, key)
+    if v is None:
+        return None
+
+    if isinstance(v, bool):
+        return v
+
+    if isinstance(v, (int, float)):
+        return bool(int(v))
+
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in {"true", "t", "yes", "y", "1"}:
+            return True
+        if s in {"false", "f", "no", "n", "0"}:
+            return False
+
+    raise ValueError(f"Excel value for {key!r} is not a bool: {v!r}")
+
+
 def read_Vector3(row: Dict[str, Any], prefix: str) -> Vector3:
     return np.array(
         [

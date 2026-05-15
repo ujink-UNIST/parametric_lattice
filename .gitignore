@@ -7,6 +7,10 @@ __pycache__/
 */__pycache__/
 *.py[cod]
 
+# Packaging metadata (auto-generated)
+*.egg-info/
+src/*.egg-info/
+
 cache/
 artifacts/
 results/

@@ -37,6 +37,7 @@ def meshing_commands(
         )
         + build_volume_meshing_commands_(
             unit_cell,
+            geometry_params,
             profile_params,
             meshing_params,
         )

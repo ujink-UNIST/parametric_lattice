@@ -11,6 +11,7 @@ from custom_io.excel_io import (
     find_table,
     get_table_data,
     run_selected,
+    run_selected_postprocess,
     selected_input_indices,
     _get_simulation_cases,
 )
@@ -94,6 +95,11 @@ def run_selected_action(book: xw.Book) -> None:
 
 def run_all_action(book: xw.Book) -> None:
     run_selected(book, None)
+
+
+def run_selected_postprocess_action(book: xw.Book) -> None:
+    selected_indices = selected_input_indices(book)
+    run_selected_postprocess(book, selected_indices)
 
 
 def open_lattice_file_action(repo_root: Path, book: xw.Book) -> None:

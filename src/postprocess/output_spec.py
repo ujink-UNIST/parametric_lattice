@@ -19,6 +19,8 @@ POSTPROCESS_OUTPUT_SPEC: dict[str, int] = {
     "index": 1,
     "hash": 1,
     "boundary_traction": 9,
+    "boundary_force": 9,
+    "boundary_moment": 9,
     "boundary_stress": 6,
     "volume_stress": 6,
 }
