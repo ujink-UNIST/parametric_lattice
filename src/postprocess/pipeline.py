@@ -27,10 +27,14 @@ from postprocess.output_dependency import (
 from postprocess.volume_command import (
     build_volume_stress_commands_,
 )
+from postprocess.energy_command import (
+    build_node_strain_energy_commands_,
+)
+from postprocess.weight_command import (
+    build_node_volume_mass_commands_,
+)
 
-PostprocessHandler = Callable[
-    [PostprocessContext], ApdlCommands
-]
+PostprocessHandler = Callable[[PostprocessContext], ApdlCommands]
 
 
 def _noop(_: PostprocessContext) -> ApdlCommands:
@@ -47,6 +51,9 @@ _HANDLERS: dict[str, PostprocessHandler] = {
     "boundary_moment": lambda _ctx: build_boundary_force_moment_commands_(_ctx),
     "boundary_stress": lambda _ctx: build_boundary_stress_commands_(_ctx),
     "volume_stress": lambda _ctx: build_volume_stress_commands_(_ctx),
+    # Intermediate outputs (not written to Excel)
+    "node_sene": lambda _ctx: build_node_strain_energy_commands_(_ctx),
+    "node_volmass": lambda _ctx: build_node_volume_mass_commands_(_ctx),
 }
 
 
@@ -58,39 +65,30 @@ def postprocess_commands(
 
     Steps:
       1) Expand requested prefixes with prerequisites (DFS)
-      2) Topologically sort to get a safe execution order
+      2) Topologically sort to get a safe execution orderㄱ
       3) Append APDL command blocks produced by per-output handlers
 
     Handler internals are intentionally stubbed for now.
     """
 
     requested_prefixes = set(needed.keys())
-    all_prefixes = expand_prefixes(
-        requested_prefixes, OUTPUT_DEPENDENCIES
-    )
+    all_prefixes = expand_prefixes(requested_prefixes, OUTPUT_DEPENDENCIES)
     order = topo_sort(all_prefixes, OUTPUT_DEPENDENCIES)
 
     missing = [p for p in order if p not in _HANDLERS]
     if missing:
-        raise KeyError(
-            "Missing postprocess handler(s) for: "
-            + ", ".join(missing)
-        )
+        raise KeyError("Missing postprocess handler(s) for: " + ", ".join(missing))
 
     ctx = PostprocessContext(
         sim_case=sim_case,
         needed=needed,
     )
 
-    cmds: ApdlCommands = (
-        apdl_command("", "--- postprocess begin ---"),
-    )
+    cmds: ApdlCommands = (apdl_command("", "--- postprocess begin ---"),)
 
     for prefix in order:
         cmds = cmds + _HANDLERS[prefix](ctx)
 
-    cmds = cmds + (
-        apdl_command("", "--- postprocess end ---"),
-    )
+    cmds = cmds + (apdl_command("", "--- postprocess end ---"),)
 
     return cmds

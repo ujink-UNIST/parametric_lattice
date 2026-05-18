@@ -7,12 +7,15 @@ from core.parameters.geometry_params import GeometryParams
 from core.unit_cell import UnitCell
 
 SELECTOR_TO_NAME: dict[str, str] = {
-    "+x": "PERIODIC_NODES_PX",
-    "-x": "PERIODIC_NODES_NX",
-    "+y": "PERIODIC_NODES_PY",
-    "-y": "PERIODIC_NODES_NY",
-    "+z": "PERIODIC_NODES_PZ",
-    "-z": "PERIODIC_NODES_NZ",
+    # Face-only selections (exclude edges/corners by also restricting the other
+    # two axes). This avoids double-counting when a boundary node lies on more
+    # than one face.
+    "+x": "BOUNDARY_FACE_PX",
+    "-x": "BOUNDARY_FACE_NX",
+    "+y": "BOUNDARY_FACE_PY",
+    "-y": "BOUNDARY_FACE_NY",
+    "+z": "BOUNDARY_FACE_PZ",
+    "-z": "BOUNDARY_FACE_NZ",
     "all": "BOUNDARY_NODES",
 }
 
@@ -143,25 +146,70 @@ def get_boundary_index_nodes(
 def get_all_periodic_nodes(
     geometry_params: GeometryParams,
 ) -> ApdlCommands:
+    """Create node components for periodic faces and for "pure" boundary faces.
+
+    Components created:
+      - PERIODIC_NODES_{N/P}{X/Y/Z}: full face (includes edges/corners). Used by
+        periodic constraint builders (e.g. setup.modal_applicator).
+      - BOUNDARY_FACE_{N/P}{X/Y/Z}: face interior only (excludes edges/corners)
+        by restricting the other two axes away from their ±half faces.
+        Intended for "boundary name" selection to avoid overlap between faces.
+    """
+
     size: Vector3 = geometry_params.size
     half_size = size / 2
 
     eps = min(size[0], size[1], size[2]) * 1e-6
 
+    hx, hy, hz = float(half_size[0]), float(half_size[1]), float(half_size[2])
+
+    def _restrict_other_axes(other_a: str, ha: float, other_b: str, hb: float) -> tuple[str, ...]:
+        """Constrain the other two coordinates to lie within the cell bounds.
+
+        This is intentionally inclusive of edges/corners; it just prevents
+        selecting nodes that numerically drift slightly outside the box.
+        """
+        return (
+            f"NSEL,R,LOC,{other_a},{-ha-eps:.10g},{ha+eps:.10g}",
+            f"NSEL,R,LOC,{other_b},{-hb-eps:.10g},{hb+eps:.10g}",
+        )
+
     return (
         "NSEL,NONE",
-        f"NSEL,S,LOC,X,{-half_size[0]-eps:.10g},{-half_size[0]+eps:.10g}",
+        # Full periodic faces (no exclusions)
+        f"NSEL,S,LOC,X,{-hx-eps:.10g},{-hx+eps:.10g}",
         "CM, PERIODIC_NODES_NX, NODE",
-        f"NSEL,S,LOC,X,{half_size[0]-eps:.10g},{half_size[0]+eps:.10g}",
+        f"NSEL,S,LOC,X,{hx-eps:.10g},{hx+eps:.10g}",
         "CM, PERIODIC_NODES_PX, NODE",
-        f"NSEL,S,LOC,Y,{-half_size[1]-eps:.10g},{-half_size[1]+eps:.10g}",
+        f"NSEL,S,LOC,Y,{-hy-eps:.10g},{-hy+eps:.10g}",
         "CM, PERIODIC_NODES_NY, NODE",
-        f"NSEL,S,LOC,Y,{half_size[1]-eps:.10g},{half_size[1]+eps:.10g}",
+        f"NSEL,S,LOC,Y,{hy-eps:.10g},{hy+eps:.10g}",
         "CM, PERIODIC_NODES_PY, NODE",
-        f"NSEL,S,LOC,Z,{-half_size[2]-eps:.10g},{-half_size[2]+eps:.10g}",
+        f"NSEL,S,LOC,Z,{-hz-eps:.10g},{-hz+eps:.10g}",
         "CM, PERIODIC_NODES_NZ, NODE",
-        f"NSEL,S,LOC,Z,{half_size[2]-eps:.10g},{half_size[2]+eps:.10g}",
+        f"NSEL,S,LOC,Z,{hz-eps:.10g},{hz+eps:.10g}",
         "CM, PERIODIC_NODES_PZ, NODE",
+        # Boundary face components with explicit constraints on the other axes
+        # (your requested behavior: when selecting i-face, restrict j,k to
+        # [-h-eps, +h+eps]).
+        f"NSEL,S,LOC,X,{-hx-eps:.10g},{-hx+eps:.10g}",
+        *_restrict_other_axes("Y", hy, "Z", hz),
+        "CM, BOUNDARY_FACE_NX, NODE",
+        f"NSEL,S,LOC,X,{hx-eps:.10g},{hx+eps:.10g}",
+        *_restrict_other_axes("Y", hy, "Z", hz),
+        "CM, BOUNDARY_FACE_PX, NODE",
+        f"NSEL,S,LOC,Y,{-hy-eps:.10g},{-hy+eps:.10g}",
+        *_restrict_other_axes("X", hx, "Z", hz),
+        "CM, BOUNDARY_FACE_NY, NODE",
+        f"NSEL,S,LOC,Y,{hy-eps:.10g},{hy+eps:.10g}",
+        *_restrict_other_axes("X", hx, "Z", hz),
+        "CM, BOUNDARY_FACE_PY, NODE",
+        f"NSEL,S,LOC,Z,{-hz-eps:.10g},{-hz+eps:.10g}",
+        *_restrict_other_axes("X", hx, "Y", hy),
+        "CM, BOUNDARY_FACE_NZ, NODE",
+        f"NSEL,S,LOC,Z,{hz-eps:.10g},{hz+eps:.10g}",
+        *_restrict_other_axes("X", hx, "Y", hy),
+        "CM, BOUNDARY_FACE_PZ, NODE",
         "NSEL,ALL",
     )
 

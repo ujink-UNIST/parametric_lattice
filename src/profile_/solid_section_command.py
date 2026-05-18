@@ -42,9 +42,7 @@ def build_solid_section_commands_(
         kb_b = orientation_keypoint_start + 2 * i
         radius = (
             profile_params.radius
-            * unit_cell.beam_types[beam_type_id][
-                "radius_ratio"
-            ]
+            * unit_cell.beam_types[beam_type_id]["radius_ratio"]
             * np.min(geometry_params.size)
         )
 
@@ -89,14 +87,10 @@ def build_solid_sphere_commands_(
     cmds: List[str] = []
     skipped_node_ids: set[int] = set()
 
-    for edge, edge_extend_id in zip(
-        unit_cell.edges, unit_cell.edge_extend_ids
-    ):
+    for edge, edge_extend_id in zip(unit_cell.edges, unit_cell.edge_extend_ids):
         if edge_extend_id == -1:
             continue
-        nodes = get_shared_nodes(
-            edge, unit_cell.edges[edge_extend_id]
-        )
+        nodes = get_shared_nodes(edge, unit_cell.edges[edge_extend_id])
         for n in nodes:
             skipped_node_ids.add(n)
 
@@ -113,9 +107,7 @@ def build_solid_sphere_commands_(
             if edge[0] == i or edge[1] == i:
                 radius_ratio = max(
                     radius_ratio,
-                    unit_cell.beam_types[beam_type_id][
-                        "radius_ratio"
-                    ],
+                    unit_cell.beam_types[beam_type_id]["radius_ratio"],
                 )
         if radius_ratio <= 0.0:
             continue
@@ -126,11 +118,7 @@ def build_solid_sphere_commands_(
 
         x, y, z = position
         csid = sphere_csys_start + i
-        r = (
-            radius_ratio
-            * profile_params.radius
-            * np.min(geometry_params.size)
-        )
+        r = radius_ratio * profile_params.radius * np.min(geometry_params.size)
 
         cmds.extend(apdl_block(f"""
 {apdl_comment(f"Create node sphere {i}")}
@@ -216,7 +204,7 @@ ALLSEL
 VADD,ALL
 NUMMRG,ALL
 NUMCMP,ALL
-BLOCK,{-x+dx*0.45},{x-dx*0.45},{-y+dy*0.45},{y-dy*0.45},{-z+dz*0.45},{z-dz*0.45}
+BLOCK,{-x+dx*0.4999},{x-dx*0.4999},{-y+dy*0.4999},{y-dy*0.4999},{-z+dz*0.4999},{z-dz*0.4999}
 VINTF,1,2
 NUMMRG,ALL
 NUMCMP,ALL

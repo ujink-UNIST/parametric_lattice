@@ -41,16 +41,27 @@ def build_line_section_commands_(
         line_end = 2 * n_edges + edge_i0
 
         cmds.extend(
+            # (
+            #     f"! Edge {edge_i0}: mid segment section {sec_mid}",
+            #     f"LSEL,S,LINE,,{line_mid}",
+            #     f"LATT,1,,1,,{kb_n},,{sec_mid}",
+            #     f"! Edge {edge_i0}: start segment (joint) section {sec_joint}",
+            #     f"LSEL,S,LINE,,{line_start}",
+            #     f"LATT,1,,1,,{kb_n},,{sec_joint}",
+            #     f"! Edge {edge_i0}: end segment (joint) section {sec_joint}",
+            #     f"LSEL,S,LINE,,{line_end}",
+            #     f"LATT,1,,1,,{kb_n},,{sec_joint}",
+            # )
             (
                 f"! Edge {edge_i0}: mid segment section {sec_mid}",
                 f"LSEL,S,LINE,,{line_mid}",
-                f"LATT,1,,1,,{kb_n},,{sec_mid}",
+                f"LATT,1,,1,,,,{sec_mid}",
                 f"! Edge {edge_i0}: start segment (joint) section {sec_joint}",
                 f"LSEL,S,LINE,,{line_start}",
-                f"LATT,1,,1,,{kb_n},,{sec_joint}",
+                f"LATT,1,,1,,,,{sec_joint}",
                 f"! Edge {edge_i0}: end segment (joint) section {sec_joint}",
                 f"LSEL,S,LINE,,{line_end}",
-                f"LATT,1,,1,,{kb_n},,{sec_joint}",
+                f"LATT,1,,1,,,,{sec_joint}",
             )
         )
 
