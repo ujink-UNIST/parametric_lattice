@@ -378,13 +378,12 @@ def run_postprocess(
             raise ValueError(f"t_output is missing required scalar column {req!r}.")
 
     # Prepare output table writer.
-    from custom_io.excel_write import (
-        write_Vector3x3,
-    )
+    from custom_io.excel_write import WriteQueue
 
     output_table: Table = find_table(book, _OUTPUT_TABLE)
+    q = WriteQueue()
 
-    # Run per-case postprocess APDL and write requested results back to t_output.
+    # Run per-case postprocess APDL and queue requested results.
     for sim_case in inputs:
         case_key = sim_case.to_string()
         case_hash = build_case_hash(case_key)
@@ -405,39 +404,42 @@ def run_postprocess(
                 )
                 run_commands(mapdl, pipeline)
 
-                # Write outputs
+                # Queue outputs
                 row0 = int(sim_case.row_idx)
 
                 if "boundary_traction" in needed:
-                    # Mapdl parameters created by postprocess.boundary_command
-                    bt = mapdl.parameters["pp_boundary_traction"]
-                    write_Vector3x3(
-                        output_table,
+                    q.add_Vector3x3(
                         row0,
                         "boundary_traction",
-                        bt,
+                        mapdl.parameters["pp_boundary_traction"],
                     )
 
                 if "boundary_force" in needed:
-                    bf = mapdl.parameters["pp_boundary_force"]
-                    write_Vector3x3(
-                        output_table,
+                    q.add_Vector3x3(
                         row0,
                         "boundary_force",
-                        bf,
+                        mapdl.parameters["pp_boundary_force"],
                     )
 
                 if "boundary_moment" in needed:
-                    bm = mapdl.parameters["pp_boundary_moment"]
-                    write_Vector3x3(
-                        output_table,
+                    q.add_Vector3x3(
                         row0,
                         "boundary_moment",
-                        bm,
+                        mapdl.parameters["pp_boundary_moment"],
+                    )
+
+                if "boundary_stress" in needed:
+                    q.add_Vector6(
+                        row0,
+                        "boundary_stress",
+                        mapdl.parameters["pp_boundary_stress"],
                     )
         except Exception as e:
             print(f"Error: {e}")
             raise
+
+    # Flush queued writes at the end (batch write). Only rows touched are written.
+    q.flush(output_table)
 
 
 def build_case_hash(key: str):
