@@ -379,56 +379,12 @@ def run_postprocess(
 
     # Prepare output table writer.
     from custom_io.excel_write import (
-        _ensure_table_column,
-        _ensure_table_rows,
+        write_Vector3x3,
     )
 
     output_table: Table = find_table(book, _OUTPUT_TABLE)
 
-    def _expand_cols(prefix: str, n_components: int) -> list[str]:
-        if n_components == 1:
-            return [prefix]
-        if n_components == 3:
-            return [f"{prefix}_X", f"{prefix}_Y", f"{prefix}_Z"]
-        if n_components == 6:
-            return [
-                f"{prefix}_XX",
-                f"{prefix}_YY",
-                f"{prefix}_ZZ",
-                f"{prefix}_YZ",
-                f"{prefix}_XZ",
-                f"{prefix}_XY",
-            ]
-        if n_components == 9:
-            return [
-                f"{prefix}_XX",
-                f"{prefix}_XY",
-                f"{prefix}_XZ",
-                f"{prefix}_YX",
-                f"{prefix}_YY",
-                f"{prefix}_YZ",
-                f"{prefix}_ZX",
-                f"{prefix}_ZY",
-                f"{prefix}_ZZ",
-            ]
-        raise ValueError(f"Unsupported component count: {n_components}")
-
-    # Ensure output table has enough rows and all requested columns.
-    _ensure_table_rows(output_table, len(inputs))
-    out_cols: list[str] = []
-    for prefix, n in needed.items():
-        out_cols.extend(_expand_cols(prefix, n))
-
-    # De-duplicate while preserving order.
-    seen: set[str] = set()
-    out_cols = [c for c in out_cols if not (c in seen or seen.add(c))]
-
-    col_indices1 = {c: _ensure_table_column(output_table, c) for c in out_cols}
-
-    # Buffer results in memory (row_idx0 -> col_name -> value).
-    buffered: dict[int, dict[str, float]] = {}
-
-    # Run per-case postprocess APDL and buffer requested results.
+    # Run per-case postprocess APDL and write requested results back to t_output.
     for sim_case in inputs:
         case_key = sim_case.to_string()
         case_hash = build_case_hash(case_key)
@@ -449,133 +405,39 @@ def run_postprocess(
                 )
                 run_commands(mapdl, pipeline)
 
+                # Write outputs
                 row0 = int(sim_case.row_idx)
-                row_out: dict[str, float] = {}
-
-                def put_matrix(prefix: str, m: object) -> None:
-                    import numpy as np
-
-                    a = np.asarray(m, dtype=float).reshape(3, 3)
-                    keys = _expand_cols(prefix, 9)
-                    vals = [
-                        float(a[0, 0]),
-                        float(a[0, 1]),
-                        float(a[0, 2]),
-                        float(a[1, 0]),
-                        float(a[1, 1]),
-                        float(a[1, 2]),
-                        float(a[2, 0]),
-                        float(a[2, 1]),
-                        float(a[2, 2]),
-                    ]
-                    for k, v in zip(keys, vals):
-                        row_out[k] = v
-
-                def put_vector6(prefix: str, v6: object) -> None:
-                    import numpy as np
-
-                    a = np.asarray(v6, dtype=float).reshape(6)
-                    keys = _expand_cols(prefix, 6)
-                    for k, v in zip(keys, a.tolist()):
-                        row_out[k] = float(v)
 
                 if "boundary_traction" in needed:
-                    put_matrix(
+                    # Mapdl parameters created by postprocess.boundary_command
+                    bt = mapdl.parameters["pp_boundary_traction"]
+                    write_Vector3x3(
+                        output_table,
+                        row0,
                         "boundary_traction",
-                        mapdl.parameters["pp_boundary_traction"],
+                        bt,
                     )
 
                 if "boundary_force" in needed:
-                    put_matrix(
+                    bf = mapdl.parameters["pp_boundary_force"]
+                    write_Vector3x3(
+                        output_table,
+                        row0,
                         "boundary_force",
-                        mapdl.parameters["pp_boundary_force"],
+                        bf,
                     )
 
                 if "boundary_moment" in needed:
-                    put_matrix(
+                    bm = mapdl.parameters["pp_boundary_moment"]
+                    write_Vector3x3(
+                        output_table,
+                        row0,
                         "boundary_moment",
-                        mapdl.parameters["pp_boundary_moment"],
+                        bm,
                     )
-
-                if "boundary_stress" in needed:
-                    put_vector6(
-                        "boundary_stress",
-                        mapdl.parameters["pp_boundary_stress"],
-                    )
-
-                if row_out:
-                    buffered[row0] = row_out
         except Exception as e:
             print(f"Error: {e}")
             raise
-
-    # Bulk-write buffered results back to Excel in as few COM calls as possible.
-    body = output_table.data_body_range
-    if body is None:
-        return
-
-    # Use contiguous column blocks to write (Excel Range.Value prefers rectangles).
-    # Build (sorted by col index) columns and their 0-based indices.
-    cols_sorted = sorted(
-        ((c, col_indices1[c] - 1) for c in out_cols),
-        key=lambda t: t[1],
-    )
-
-    # Partition into contiguous blocks.
-    blocks: list[list[tuple[str, int]]] = []
-    for name, c0 in cols_sorted:
-        if not blocks:
-            blocks.append([(name, c0)])
-            continue
-        prev_c0 = blocks[-1][-1][1]
-        if c0 == prev_c0 + 1:
-            blocks[-1].append((name, c0))
-        else:
-            blocks.append([(name, c0)])
-
-    # Rows: always write full table height to keep rectangular writes simple.
-    n_rows = body.rows.count
-
-    for block in blocks:
-        block_names = [n for n, _ in block]
-        c0 = block[0][1]
-        c1 = block[-1][1]
-        rng = body[:, c0 : c1 + 1]
-
-        data2d: list[list[object]] = []
-        for r in range(n_rows):
-            row_vals = buffered.get(r)
-            if row_vals is None:
-                data2d.append([None] * len(block_names))
-            else:
-                data2d.append([row_vals.get(k) for k in block_names])
-
-        # Bulk write can still hit transient Excel busy errors; retry a few times.
-        import time
-
-        for attempt in range(15):
-            try:
-                rng.value = data2d
-                break
-            except Exception as e:
-                try:
-                    import pywintypes
-
-                    if isinstance(e, pywintypes.com_error):
-                        hr = e.args[0] if e.args else None
-                        excel_hr = None
-                        if (
-                            len(e.args) >= 3
-                            and isinstance(e.args[2], tuple)
-                            and len(e.args[2]) >= 6
-                        ):
-                            excel_hr = e.args[2][5]
-                        if hr == -2147352567 and excel_hr in (-2146777998,):
-                            time.sleep(0.1 * (attempt + 1))
-                            continue
-                except Exception:
-                    pass
-                raise
 
 
 def build_case_hash(key: str):
