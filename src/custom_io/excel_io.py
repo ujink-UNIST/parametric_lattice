@@ -167,7 +167,9 @@ def run_selected(
     )
 
     if selected_indices is None:
-        run_cases(book, inputs)
+        # When running from Excel, we want intermediate artifacts (geometry_db,
+        # mesh_db, lattice JSON, etc.) for debugging/reuse.
+        run_cases(book, inputs, save_intermediate=True)
         return
 
     selected: list[SimCase] = []
@@ -176,7 +178,9 @@ def run_selected(
         if i in selected_set:
             selected.append(sim_case)
 
-    run_cases(book, tuple(selected))
+    # When running from Excel, we want intermediate artifacts (geometry_db,
+    # mesh_db, lattice JSON, etc.) for debugging/reuse.
+    run_cases(book, tuple(selected), save_intermediate=True)
 
 
 def run_selected_postprocess(
