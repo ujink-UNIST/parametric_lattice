@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+import time
+
 import numpy as np
 import xlwings as xw
 from xlwings.main import Table
@@ -47,6 +49,38 @@ def _ensure_table_rows(table: Table, n_rows: int) -> None:
         list_rows.Add()
 
 
+def _set_cell_value(cell: xw.Range, value: Any) -> None:
+    """Set a single Excel cell value with a small retry for transient COM errors."""
+
+    # Excel sometimes returns 0x800AC472 (application busy) when it's updating.
+    # Retrying makes Excel integration much more robust.
+    for attempt in range(15):
+        try:
+            cell.value = value
+            return
+        except Exception as e:
+            # Only retry for known COM error codes.
+            try:
+                import pywintypes
+
+                if isinstance(e, pywintypes.com_error):
+                    # e.args[0] is the HRESULT; e.args[2] may contain the Excel error.
+                    hr = e.args[0] if e.args else None
+                    excel_hr = None
+                    if len(e.args) >= 3 and isinstance(e.args[2], tuple) and len(e.args[2]) >= 6:
+                        excel_hr = e.args[2][5]
+
+                    if hr == -2147352567 and excel_hr in (-2146777998,):
+                        time.sleep(0.1 * (attempt + 1))
+                        continue
+            except Exception:
+                pass
+            raise
+
+    # If we somehow exhausted retries without raising, raise a generic error.
+    raise RuntimeError("Failed to write to Excel after retries")
+
+
 def write_value(
     table: Table,
     row_idx0: int,
@@ -74,7 +108,7 @@ def write_value(
     if body is None:
         return
 
-    body[row_idx0, col_idx1 - 1].value = value
+    _set_cell_value(body[row_idx0, col_idx1 - 1], value)
 
 
 def write_row(
@@ -103,7 +137,7 @@ def write_row(
         return
 
     for k, v in values.items():
-        body[row_idx0, col_indices1[k] - 1].value = v
+        _set_cell_value(body[row_idx0, col_indices1[k] - 1], v)
 
 
 def write_float(
