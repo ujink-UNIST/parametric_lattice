@@ -402,20 +402,37 @@ def run_postprocess(
     output_table: Table = find_table(book, _OUTPUT_TABLE)
     q = WriteQueue()
 
-    # Run per-case postprocess APDL and queue requested results.
-    for sim_case in inputs:
-        case_key = sim_case.to_string()
-        case_hash = build_case_hash(case_key)
+    # Keep a single MAPDL session open and switch working directory per case.
+    session_dir = base_run_dir / "__mapdl_postprocess_session"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    jobname = "case"
 
-        run_dir = base_run_dir / f"{case_hash}"
-        jobname = "case"
+    try:
+        with mapdl_session(
+            run_location=str(session_dir),
+            jobname=jobname,
+            cleanup_on_exit=False,
+        ) as mapdl:
+            # Run per-case postprocess APDL and queue requested results.
+            for sim_case in inputs:
+                case_key = sim_case.to_string()
+                case_hash = build_case_hash(case_key)
+                run_dir = base_run_dir / f"{case_hash}"
 
-        try:
-            with mapdl_session(
-                run_location=str(run_dir),
-                jobname=jobname,
-                cleanup_on_exit=False,
-            ) as mapdl:
+                # Switch to the case working directory, restore DB, attach RST.
+                # This avoids restarting MAPDL for each postprocess run.
+                prelude = (
+                    f"/CWD,'{run_dir.as_posix()}'",
+                    "FINISH",
+                    "/CLEAR",
+                    "RESUME,'case','db'",
+                    "/POST1",
+                    "FILE,'case','rst'",
+                    "SET,LAST",
+                    "ALLSEL,ALL",
+                )
+                run_commands(mapdl, prelude)
+
                 print(sim_case.to_string())
                 pipeline = postprocess_commands(
                     sim_case=sim_case,
@@ -453,9 +470,9 @@ def run_postprocess(
                         "boundary_stress",
                         mapdl.parameters["pp_boundary_stress"],
                     )
-        except Exception as e:
-            print(f"Error: {e}")
-            raise
+    except Exception as e:
+        print(f"Error: {e}")
+        raise
 
     # Flush queued writes at the end (batch write). Only rows touched are written.
     q.flush(output_table)
