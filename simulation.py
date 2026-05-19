@@ -41,7 +41,7 @@ def sub_run_all():
 
 
 @xw.sub
-def sun_run_selected_postprocess():
+def sub_run_selected_postprocess():
     run_selected_postprocess_action(xw.Book.caller())
 
 
