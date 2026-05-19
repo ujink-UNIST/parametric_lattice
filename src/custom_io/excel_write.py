@@ -49,14 +49,17 @@ def _ensure_table_rows(table: Table, n_rows: int) -> None:
         list_rows.Add()
 
 
-def _set_cell_value(cell: xw.Range, value: Any) -> None:
+def _set_cell_value(table: Table, row_idx: int, col_idx: int, value: Any) -> None:
     """Set a single Excel cell value with a small retry for transient COM errors."""
 
     # Excel sometimes returns 0x800AC472 (application busy) when it's updating.
     # Retrying makes Excel integration much more robust.
     for attempt in range(15):
         try:
-            cell.value = value
+            body = table.data_body_range
+            if body is None:
+                raise RuntimeError("Excel table has no data body range")
+            body[row_idx, col_idx].value = value
             return
         except Exception as e:
             # Only retry for known COM error codes.
@@ -67,7 +70,11 @@ def _set_cell_value(cell: xw.Range, value: Any) -> None:
                     # e.args[0] is the HRESULT; e.args[2] may contain the Excel error.
                     hr = e.args[0] if e.args else None
                     excel_hr = None
-                    if len(e.args) >= 3 and isinstance(e.args[2], tuple) and len(e.args[2]) >= 6:
+                    if (
+                        len(e.args) >= 3
+                        and isinstance(e.args[2], tuple)
+                        and len(e.args[2]) >= 6
+                    ):
                         excel_hr = e.args[2][5]
 
                     if hr == -2147352567 and excel_hr in (-2146777998,):
@@ -108,7 +115,7 @@ def write_value(
     if body is None:
         return
 
-    _set_cell_value(body[row_idx0, col_idx1 - 1], value)
+    _set_cell_value(table, row_idx0, col_idx1 - 1, value)
 
 
 def write_row(
@@ -128,16 +135,14 @@ def write_row(
         return
 
     # Ensure all columns first (mutates table), then refresh body.
-    col_indices1 = {
-        k: _ensure_table_column(table, k) for k in values.keys()
-    }
+    col_indices1 = {k: _ensure_table_column(table, k) for k in values.keys()}
 
     body = table.data_body_range
     if body is None:
         return
 
     for k, v in values.items():
-        _set_cell_value(body[row_idx0, col_indices1[k] - 1], v)
+        _set_cell_value(table, row_idx0, col_indices1[k] - 1, v)
 
 
 def write_float(
