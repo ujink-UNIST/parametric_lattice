@@ -94,4 +94,9 @@ def build_pipeline(
             sim_case.post_mesh_spec.setup,
         )
         + solver_commands(sim_case.post_mesh_spec.setup)
+        # Persist the MAPDL database in the run directory so postprocess can
+        # RESUME it later without restarting MAPDL.
+        + (
+            "SAVE,'case','db'",
+        )
     )

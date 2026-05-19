@@ -277,49 +277,68 @@ def run_cases(
     base_run_dir = cfg.results_root / "case"
     case_artifacts_root = cfg.artifacts_root / "case"
 
-    for sim_case in inputs:
-        case_key = sim_case.to_string()
-        case_hash = build_case_hash(case_key)
+    # Keep a single MAPDL session open and switch working directory per case.
+    session_dir = base_run_dir / "__mapdl_session"
+    session_dir.mkdir(parents=True, exist_ok=True)
 
-        run_dir = base_run_dir / f"{case_hash}"
-        # Use a stable, non-hash jobname so result filenames don't include the case hash.
-        # The run_dir is already namespaced by case_hash.
-        jobname = "case"
+    # Use a stable, non-hash jobname so result filenames don't include the case hash.
+    jobname = "case"
 
-        run_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        with mapdl_session(
+            run_location=str(session_dir),
+            jobname=jobname,
+            cleanup_on_exit=False,
+        ) as mapdl:
+            for sim_case in inputs:
+                case_key = sim_case.to_string()
+                case_hash = build_case_hash(case_key)
 
-        # Save sim_case metadata alongside results for reproducibility.
-        sim_case_path = case_artifacts_root / case_hash / "sim_case.json"
-        sim_case_path.parent.mkdir(parents=True, exist_ok=True)
-        sim_case_path.write_text(
-            json.dumps(
-                {
-                    "case_key": case_key,
-                    "case_hash": case_hash,
-                    "sim_case": sim_case,
-                },
-                ensure_ascii=False,
-                indent=2,
-                default=lambda o: (o.tolist() if hasattr(o, "tolist") else vars(o)),
-            ),
-            encoding="utf-8",
-        )
+                run_dir = base_run_dir / f"{case_hash}"
+                run_dir.mkdir(parents=True, exist_ok=True)
 
-        try:
-            with mapdl_session(
-                run_location=str(run_dir),
-                jobname=jobname,
-                cleanup_on_exit=False,
-            ) as mapdl:
+                # Save sim_case metadata alongside results for reproducibility.
+                sim_case_path = case_artifacts_root / case_hash / "sim_case.json"
+                sim_case_path.parent.mkdir(parents=True, exist_ok=True)
+                sim_case_path.write_text(
+                    json.dumps(
+                        {
+                            "case_key": case_key,
+                            "case_hash": case_hash,
+                            "sim_case": sim_case,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                        default=lambda o: (
+                            o.tolist() if hasattr(o, "tolist") else vars(o)
+                        ),
+                    ),
+                    encoding="utf-8",
+                )
+
                 print(sim_case.to_string())
+
+                # Switch MAPDL working directory so all solver files are
+                # written under this case.
+                run_commands(
+                    mapdl,
+                    (
+                        f"/CWD,'{run_dir.as_posix()}'",
+                    ),
+                )
+
                 pipeline = build_pipeline(
                     sim_case,
                     save_intermediate=save_intermediate,
                 )
+
+                # Ensure jobname is set after /CLEAR inside the pipeline.
+                pipeline = pipeline[:1] + ("/FILNAME,case",) + pipeline[1:]
+
                 run_commands(mapdl, pipeline)
-        except Exception as e:
-            print(f"Error: {e}")
-            raise
+    except Exception as e:
+        print(f"Error: {e}")
+        raise
 
 
 def run_postprocess(
