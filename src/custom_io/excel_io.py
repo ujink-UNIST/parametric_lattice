@@ -44,6 +44,12 @@ from custom_io.excel_read import (
     read_Vector3,
 )
 from custom_io.lgf_io import resolve_cell_name
+from custom_io.path_config import (
+    PathConfig,
+    default_config,
+    get_path_config,
+    set_path_config,
+)
 from custom_io.socket_io import choose_free_port
 from pipeline import build_pipeline
 from postprocess.output_spec import POSTPROCESS_OUTPUT_SPEC
@@ -51,6 +57,7 @@ from postprocess.pipeline import postprocess_commands
 
 _INPUT_TABLE = "t_input"
 _OUTPUT_TABLE = "t_output"
+_CONFIG_TABLE = "t_config"
 
 
 class DataclassType(Protocol):
@@ -68,6 +75,66 @@ Header = tuple[str, ...]
 Body = tuple[tuple[Any, ...], ...]
 
 
+def _apply_path_config_from_book(book: xw.Book) -> None:
+    """Apply runtime path config from Excel `t_config` (if present).
+
+    We interpret values *as-is* (no '~' expansion). If a value is provided, it
+    must be an absolute path.
+
+    Expected columns in `t_config` (first row is used):
+      - lgf
+      - artifacts
+      - results
+
+    Missing table/columns/cells fall back to repo defaults.
+    """
+
+    repo_root = Path(__file__).resolve().parents[2]
+    cfg = default_config(repo_root)
+
+    try:
+        table = find_table(book, _CONFIG_TABLE)
+    except KeyError:
+        set_path_config(cfg)
+        return
+
+    header, body = get_table_data(table)
+    if not body:
+        set_path_config(cfg)
+        return
+
+    row0 = body[0]
+    col_index = {str(h).strip().lower(): i for i, h in enumerate(header)}
+
+    def read_abs(col: str) -> Path | None:
+        i = col_index.get(col)
+        if i is None or i >= len(row0):
+            return None
+        v = row0[i]
+        if v is None:
+            return None
+        s = str(v).strip()
+        if not s:
+            return None
+        p = Path(s)
+        if not p.is_absolute():
+            raise ValueError(f"t_config.{col} must be an absolute path (got {s!r})")
+        return p
+
+    lgf_root = read_abs("lgf") or cfg.lgf_root
+    artifacts_root = read_abs("artifacts") or cfg.artifacts_root
+    results_root = read_abs("results") or cfg.results_root
+
+    set_path_config(
+        PathConfig(
+            repo_root=cfg.repo_root,
+            lgf_root=lgf_root,
+            artifacts_root=artifacts_root,
+            results_root=results_root,
+        )
+    )
+
+
 def run_selected(
     book: xw.Book,
     selected_indices: tuple[int, ...] | None = None,
@@ -80,6 +147,8 @@ def run_selected(
             - None: run all cases
             - tuple[int, ...]: run only those cases
     """
+
+    _apply_path_config_from_book(book)
 
     input_table: Table = find_table(book, _INPUT_TABLE)
     input_header, input_body = get_table_data(input_table)
@@ -98,7 +167,7 @@ def run_selected(
     )
 
     if selected_indices is None:
-        run_cases(inputs)
+        run_cases(book, inputs)
         return
 
     selected: list[SimCase] = []
@@ -107,13 +176,15 @@ def run_selected(
         if i in selected_set:
             selected.append(sim_case)
 
-    run_cases(tuple(selected))
+    run_cases(book, tuple(selected))
 
 
 def run_selected_postprocess(
     book: xw.Book,
     selected_indices: tuple[int, ...] | None = None,
 ) -> None:
+    _apply_path_config_from_book(book)
+
     input_table: Table = find_table(book, _INPUT_TABLE)
     input_header, input_body = get_table_data(input_table)
 
@@ -194,12 +265,13 @@ def selected_input_indices(
 
 
 def run_cases(
+    book: xw.Book,
     inputs: Tuple[SimCase, ...],
     save_intermediate: bool = False,
 ):
-    repo_root = Path(__file__).resolve().parents[2]
-    base_run_dir = repo_root / "results" / "case"
-    case_artifacts_root = repo_root / "artifacts" / "case"
+    cfg = get_path_config()
+    base_run_dir = cfg.results_root / "case"
+    case_artifacts_root = cfg.artifacts_root / "case"
 
     for sim_case in inputs:
         case_key = sim_case.to_string()
@@ -260,8 +332,8 @@ def run_postprocess(
     one of {1,3,6,9}.
     """
 
-    repo_root = Path(__file__).resolve().parents[2]
-    base_run_dir = repo_root / "results" / "case"
+    cfg = get_path_config()
+    base_run_dir = cfg.results_root / "case"
 
     needed: dict[str, int] = {}
     component_sets: dict[str, set[str]] = {}

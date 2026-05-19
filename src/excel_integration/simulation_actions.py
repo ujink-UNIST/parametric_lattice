@@ -7,14 +7,16 @@ from typing import Protocol
 import xlwings as xw
 
 from custom_io.excel_io import (
+    _apply_path_config_from_book,
+    _get_simulation_cases,
     build_case_hash,
     find_table,
     get_table_data,
     run_selected,
     run_selected_postprocess,
     selected_input_indices,
-    _get_simulation_cases,
 )
+from custom_io.path_config import get_path_config
 
 
 class Messenger(Protocol):
@@ -104,6 +106,8 @@ def run_selected_postprocess_action(book: xw.Book) -> None:
 
 def open_lattice_file_action(repo_root: Path, book: xw.Book) -> None:
     msg = ExcelMessenger(book)
+    _apply_path_config_from_book(book)
+    cfg = get_path_config()
 
     row_idx = _first_selected_index(book)
     if row_idx is None:
@@ -111,7 +115,7 @@ def open_lattice_file_action(repo_root: Path, book: xw.Book) -> None:
         return
 
     _, lattice_rel = _get_case_hash_and_lattice_relpath(book, row_idx)
-    lattice_path = repo_root / "lgf" / lattice_rel
+    lattice_path = cfg.lgf_root / lattice_rel
     if not lattice_path.exists():
         msg.info(f"LGF 파일을 찾을 수 없습니다: {lattice_path}")
         return
@@ -121,6 +125,8 @@ def open_lattice_file_action(repo_root: Path, book: xw.Book) -> None:
 
 def open_case_artifacts_action(repo_root: Path, book: xw.Book) -> None:
     msg = ExcelMessenger(book)
+    _apply_path_config_from_book(book)
+    cfg = get_path_config()
 
     row_idx = _first_selected_index(book)
     if row_idx is None:
@@ -128,12 +134,14 @@ def open_case_artifacts_action(repo_root: Path, book: xw.Book) -> None:
         return
 
     case_hash, _ = _get_case_hash_and_lattice_relpath(book, row_idx)
-    artifacts_dir = repo_root / "artifacts" / "case" / case_hash
+    artifacts_dir = cfg.artifacts_root / "case" / case_hash
     Explorer.open_folder(artifacts_dir)
 
 
 def open_results_action(repo_root: Path, book: xw.Book) -> None:
     msg = ExcelMessenger(book)
+    _apply_path_config_from_book(book)
+    cfg = get_path_config()
 
     row_idx = _first_selected_index(book)
     if row_idx is None:
@@ -141,5 +149,5 @@ def open_results_action(repo_root: Path, book: xw.Book) -> None:
         return
 
     case_hash, _ = _get_case_hash_and_lattice_relpath(book, row_idx)
-    results_dir = repo_root / "results" / "case" / case_hash
+    results_dir = cfg.results_root / "case" / case_hash
     Explorer.open_folder(results_dir)

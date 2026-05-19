@@ -9,10 +9,11 @@ from typing import Any
 
 import numpy as np
 
+from custom_io.path_config import get_path_config
 from custom_io.path_safety import safe_path_under
 
 _JSON_SUFFIX = ".json"
-_JSON_ROOT = "artifacts/metadata"
+_JSON_ROOT = "metadata"
 
 
 def _to_jsonable(obj: Any) -> Any:
@@ -41,18 +42,14 @@ def _to_jsonable(obj: Any) -> Any:
 
 
 def import_json(name: str):
-    artifacts_root = (
-        Path(__file__).resolve().parents[2] / _JSON_ROOT
-    )
+    artifacts_root = get_path_config().artifacts_root / _JSON_ROOT
     path = safe_path_under(artifacts_root, name, _JSON_SUFFIX)
     with path.open("r", encoding="utf-8") as file:
         return json.load(file)
 
 
 def export_json(name: str, data: object) -> None:
-    artifacts_root = (
-        Path(__file__).resolve().parents[2] / _JSON_ROOT
-    )
+    artifacts_root = get_path_config().artifacts_root / _JSON_ROOT
     path = safe_path_under(artifacts_root, name, _JSON_SUFFIX)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as file:

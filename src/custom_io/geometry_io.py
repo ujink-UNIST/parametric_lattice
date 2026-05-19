@@ -14,7 +14,9 @@ from core.apdl_block import apdl_section
 from core.apdl_commands import ApdlCommands
 from core.parameters.sim_case import SimCase
 
-_GEOMETRY_DB_ROOT = "artifacts/geometry_db"
+from custom_io.path_config import get_path_config
+
+_GEOMETRY_DB_ROOT = "geometry_db"
 _GEOMETRY_DB_BASENAME = "geometry"
 _GEOMETRY_DB_SUFFIX = ".db"
 _GEOMETRY_IGES_EXT = "iges"
@@ -42,12 +44,8 @@ def _get_geometry_hash(sim_case: SimCase) -> str:
 
 
 def _geometry_db_dir(sim_case: SimCase) -> Path:
-    repo_root = Path(__file__).resolve().parents[2]
-    return (
-        repo_root
-        / _GEOMETRY_DB_ROOT
-        / _get_geometry_hash(sim_case)
-    )
+    artifacts_root = get_path_config().artifacts_root
+    return artifacts_root / _GEOMETRY_DB_ROOT / _get_geometry_hash(sim_case)
 
 
 def _geometry_db_path(sim_case: SimCase) -> Path:

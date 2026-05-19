@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from custom_io.path_config import get_path_config
 from custom_io.path_safety import safe_path_under
 
 _LGF_ROOT = "lgf"
@@ -74,7 +75,7 @@ def resolve_cell_name(name: str) -> str:
       - "custom/bc" -> "custom/bc.lgf" ...
     """
 
-    cells_root = Path(__file__).resolve().parents[2] / _LGF_ROOT
+    cells_root = get_path_config().lgf_root
 
     rel = Path(name)
     if rel.suffix in _ALLOWED_SUFFIXES:
@@ -108,7 +109,7 @@ def import_lgf(name: str) -> list[str]:
       The file is resolved/validated using :func:`resolve_cell_name`.
     """
 
-    cells_root = Path(__file__).resolve().parents[2] / _LGF_ROOT
+    cells_root = get_path_config().lgf_root
     rel_name = resolve_cell_name(name)
     suffix = Path(rel_name).suffix
     path = safe_path_under(cells_root, rel_name, suffix)

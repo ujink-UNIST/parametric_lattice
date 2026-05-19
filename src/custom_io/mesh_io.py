@@ -14,8 +14,9 @@ from core.apdl_block import apdl_section
 from core.apdl_commands import ApdlCommands
 from core.parameters.sim_case import SimCase
 
+from custom_io.path_config import get_path_config
 
-_MESH_DB_ROOT = "artifacts/mesh_db"
+_MESH_DB_ROOT = "mesh_db"
 _MESH_DB_BASENAME = "mesh"
 _MESH_DB_SUFFIX = ".db"
 _MESH_CDB_EXT = "cdb"
@@ -36,8 +37,8 @@ def _get_mesh_hash(sim_case: SimCase) -> str:
 
 
 def _mesh_db_dir(sim_case: SimCase) -> Path:
-    repo_root = Path(__file__).resolve().parents[2]
-    return repo_root / _MESH_DB_ROOT / _get_mesh_hash(sim_case)
+    artifacts_root = get_path_config().artifacts_root
+    return artifacts_root / _MESH_DB_ROOT / _get_mesh_hash(sim_case)
 
 
 def _mesh_db_path(sim_case: SimCase) -> Path:
