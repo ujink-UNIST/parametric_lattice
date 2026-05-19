@@ -66,5 +66,47 @@ def build_boundary_traction_commands_(ctx: PostprocessContext) -> ApdlCommands:
 
 
 def build_boundary_stress_commands_(ctx: PostprocessContext) -> ApdlCommands:
+    """Compute symmetric boundary stress from `pp_boundary_traction`.
+
+    Assumptions:
+      - Standard Cauchy continuum (no couple stress) => stress is symmetric.
+
+    Mapping:
+      pp_boundary_traction(i,j) corresponds to traction component i on the face
+      with normal axis j, i.e. sigma_ij.
+
+    Storage:
+      pp_boundary_stress(k) with convention [XX, YY, ZZ, YZ, XZ, XY].
+      This matches `write_Vector6` and the Excel column naming.
+    """
+
     _ = ctx
-    return (apdl_command("", "TODO(postprocess): compute boundary_stress"),)
+
+    cmd: list[str] = [
+        apdl_command("/POST1", "postprocess: boundary stress"),
+        apdl_command("SET,LAST", "use last substep"),
+        apdl_command("ALLSEL,ALL"),
+        apdl_command(
+            "*DIM,pp_boundary_stress,ARRAY,6",
+            "[XX, YY, ZZ, YZ, XZ, XY]",
+        ),
+        # Diagonals
+        apdl_command("pp_boundary_stress(1)=pp_boundary_traction(1,1)", "XX"),
+        apdl_command("pp_boundary_stress(2)=pp_boundary_traction(2,2)", "YY"),
+        apdl_command("pp_boundary_stress(3)=pp_boundary_traction(3,3)", "ZZ"),
+        # Symmetrized shear terms
+        apdl_command(
+            "pp_boundary_stress(4)=(pp_boundary_traction(2,3)+pp_boundary_traction(3,2))/2",
+            "YZ=(YZ+ZY)/2",
+        ),
+        apdl_command(
+            "pp_boundary_stress(5)=(pp_boundary_traction(1,3)+pp_boundary_traction(3,1))/2",
+            "XZ=(XZ+ZX)/2",
+        ),
+        apdl_command(
+            "pp_boundary_stress(6)=(pp_boundary_traction(1,2)+pp_boundary_traction(2,1))/2",
+            "XY=(XY+YX)/2",
+        ),
+    ]
+
+    return tuple(cmd)
