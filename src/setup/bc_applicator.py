@@ -54,17 +54,13 @@ def strain_variable_commands(
         "xz",
         "zx",
     )
-    return tuple(
-        f"*SET,e_{key},{values[key]:.10g}" for key in keys
-    )
+    return tuple(f"*SET,e_{key},{values[key]:.10g}" for key in keys)
 
 
 def apply_displacement_loop_commands(
     ce_dofs: tuple[str, ...],
 ) -> ApdlCommands:
-    ce_commands: ApdlCommands = tuple(
-        f"D,_NID_BC_,{dof},0" for dof in ce_dofs
-    )
+    ce_commands: ApdlCommands = tuple(f"D,_NID_BC_,{dof},0" for dof in ce_dofs)
 
     return (
         "CMSEL,S,BOUNDARY_NODES",

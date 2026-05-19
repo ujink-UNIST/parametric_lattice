@@ -204,7 +204,7 @@ ALLSEL
 VADD,ALL
 NUMMRG,ALL
 NUMCMP,ALL
-BLOCK,{-x+dx*0.4999},{x-dx*0.4999},{-y+dy*0.4999},{y-dy*0.4999},{-z+dz*0.4999},{z-dz*0.4999}
+BLOCK,{-x+dx*0.49},{x-dx*0.49},{-y+dy*0.49},{y-dy*0.49},{-z+dz*0.49},{z-dz*0.49}
 VINTF,1,2
 NUMMRG,ALL
 NUMCMP,ALL
