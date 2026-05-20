@@ -39,7 +39,14 @@ def _values_Vector3(
     prefix: str,
     value: Vector3,
 ) -> dict[str, float]:
-    x, y, z = (float(v) for v in value)
+    # MAPDL sometimes returns (3, 1) or (1, 3); normalize to flat length-3.
+    arr = np.asarray(value, dtype=float).reshape(-1)
+    if arr.size != 3:
+        raise ValueError(
+            f"{prefix}: expected Vector3 with 3 elements, got shape {np.shape(value)!r}"
+        )
+
+    x, y, z = (float(v) for v in arr)
     return {
         f"{prefix}_X": x,
         f"{prefix}_Y": y,
@@ -74,10 +81,17 @@ def _values_Vector3x3(
     prefix: str,
     value: Vector3x3,
 ) -> dict[str, float]:
-    r0, r1, r2 = value
-    xx, xy, xz = (float(v) for v in r0)
-    yx, yy, yz = (float(v) for v in r1)
-    zx, zy, zz = (float(v) for v in r2)
+    # Normalize: accept (3,3) as well as flattened (9,) or (9,1), etc.
+    arr = np.asarray(value, dtype=float)
+    if arr.size != 9:
+        raise ValueError(
+            f"{prefix}: expected Vector3x3 with 9 elements, got shape {np.shape(value)!r}"
+        )
+    arr = arr.reshape(3, 3)
+
+    xx, xy, xz = (float(v) for v in arr[0])
+    yx, yy, yz = (float(v) for v in arr[1])
+    zx, zy, zz = (float(v) for v in arr[2])
     return {
         f"{prefix}_XX": xx,
         f"{prefix}_XY": xy,
