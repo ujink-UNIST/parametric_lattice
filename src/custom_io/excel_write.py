@@ -13,6 +13,7 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
+import numpy as np
 from xlwings.main import Table
 
 from core.floats.types import Vector3, Vector3x3, Vector6
@@ -50,7 +51,14 @@ def _values_Vector6(
     prefix: str,
     value: Vector6,
 ) -> dict[str, float]:
-    xx, yy, zz, yz, xz, xy = (float(v) for v in value)
+    # MAPDL sometimes returns (6, 1) or (1, 6); normalize to flat length-6.
+    arr = np.asarray(value, dtype=float).reshape(-1)
+    if arr.size != 6:
+        raise ValueError(
+            f"{prefix}: expected Vector6 with 6 elements, got shape {np.shape(value)!r}"
+        )
+
+    xx, yy, zz, yz, xz, xy = (float(v) for v in arr)
     # Convention: [XX, YY, ZZ, YZ, XZ, XY]
     return {
         f"{prefix}_XX": xx,
