@@ -51,8 +51,15 @@ _CONFIG_TABLE = "t_config"
 # For a running case at table body row i, we write to e.g. A{excel_row}.
 _STATUS_COL = "A"
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+_PENDING_MARK = "…"
 _DONE_MARK = "✓"
 _FAIL_MARK = "✗"
+
+# Status cell styling (RGB)
+_PENDING_COLOR = (235, 235, 235)  # light gray
+_RUNNING_COLOR = (255, 242, 204)  # light yellow
+_DONE_COLOR = (198, 239, 206)  # light green
+_FAIL_COLOR = (255, 199, 206)  # light red
 
 
 def _doevents(book: xw.Book) -> None:
@@ -63,6 +70,48 @@ def _doevents(book: xw.Book) -> None:
 
     with suppress(Exception):
         book.app.api.Run("DoEvents")
+
+
+def _style_status_cell(cell: xw.Range, *, fill_rgb: tuple[int, int, int]) -> None:
+    with suppress(Exception):
+        cell.color = fill_rgb
+    with suppress(Exception):
+        cell.api.Font.Bold = True
+    with suppress(Exception):
+        cell.api.HorizontalAlignment = -4108  # xlCenter
+
+
+def _set_status_pending(book: xw.Book, cell: xw.Range | None) -> None:
+    if cell is None:
+        return
+    cell.value = _PENDING_MARK
+    _style_status_cell(cell, fill_rgb=_PENDING_COLOR)
+    _doevents(book)
+
+
+def _set_status_running(book: xw.Book, cell: xw.Range | None) -> None:
+    if cell is None:
+        return
+    # Mirror the global spinner cell (Sheet1!A1) while this case runs.
+    cell.formula = "=Sheet1!$A$1"
+    _style_status_cell(cell, fill_rgb=_RUNNING_COLOR)
+    _doevents(book)
+
+
+def _set_status_done(book: xw.Book, cell: xw.Range | None) -> None:
+    if cell is None:
+        return
+    cell.value = _DONE_MARK
+    _style_status_cell(cell, fill_rgb=_DONE_COLOR)
+    _doevents(book)
+
+
+def _set_status_fail(book: xw.Book, cell: xw.Range | None) -> None:
+    if cell is None:
+        return
+    cell.value = _FAIL_MARK
+    _style_status_cell(cell, fill_rgb=_FAIL_COLOR)
+    _doevents(book)
 
 
 class DataclassType(Protocol):
@@ -282,6 +331,13 @@ def run_cases(
     jobname = "case"
 
     try:
+        # Mark all selected rows as pending up-front.
+        for sim_case in inputs:
+            _set_status_pending(
+                book,
+                _status_range_for_input_row(book, int(sim_case.row_idx)),
+            )
+
         with mapdl_session(
             run_location=str(session_dir),
             jobname=jobname,
@@ -289,10 +345,7 @@ def run_cases(
         ) as mapdl:
             for sim_case in inputs:
                 status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
-                if status_cell is not None:
-                    # Mirror the global spinner cell (Sheet1!A1) while this case runs.
-                    status_cell.formula = "=Sheet1!$A$1"
-                    _doevents(book)
+                _set_status_running(book, status_cell)
 
                 case_key = sim_case.to_string()
                 case_hash = build_case_hash(case_key)
@@ -339,14 +392,10 @@ def run_cases(
                 try:
                     run_commands(mapdl, pipeline)
                 except Exception:
-                    if status_cell is not None:
-                        status_cell.value = _FAIL_MARK
-                        _doevents(book)
+                    _set_status_fail(book, status_cell)
                     raise
 
-                if status_cell is not None:
-                    status_cell.value = _DONE_MARK
-                    _doevents(book)
+                _set_status_done(book, status_cell)
     except Exception as e:
         print(f"Error: {e}")
         raise
@@ -419,6 +468,13 @@ def run_postprocess(
     jobname = "case"
 
     try:
+        # Mark all selected rows as pending up-front.
+        for sim_case in inputs:
+            _set_status_pending(
+                book,
+                _status_range_for_input_row(book, int(sim_case.row_idx)),
+            )
+
         with mapdl_session(
             run_location=str(session_dir),
             jobname=jobname,
@@ -427,10 +483,7 @@ def run_postprocess(
             # Run per-case postprocess APDL and queue requested results.
             for sim_case in inputs:
                 status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
-                if status_cell is not None:
-                    # Mirror the global spinner cell (Sheet1!A1) while this case runs.
-                    status_cell.formula = "=Sheet1!$A$1"
-                    _doevents(book)
+                _set_status_running(book, status_cell)
 
                 case_key = sim_case.to_string()
                 case_hash = build_case_hash(case_key)
@@ -457,14 +510,10 @@ def run_postprocess(
                 try:
                     run_commands(mapdl, pipeline)
                 except Exception:
-                    if status_cell is not None:
-                        status_cell.value = _FAIL_MARK
-                        _doevents(book)
+                    _set_status_fail(book, status_cell)
                     raise
 
-                if status_cell is not None:
-                    status_cell.value = _DONE_MARK
-                    _doevents(book)
+                _set_status_done(book, status_cell)
 
                 # Queue outputs
                 row0 = int(sim_case.row_idx)
@@ -474,6 +523,9 @@ def run_postprocess(
 
                 if "hash" in needed:
                     q.add_str(row0, "hash", case_hash)
+
+                if "volume" in needed:
+                    q.add_float(row0, "volume", mapdl.parameters["pp_volume"])
 
                 if "boundary_traction" in needed:
                     q.add_Vector3x3(

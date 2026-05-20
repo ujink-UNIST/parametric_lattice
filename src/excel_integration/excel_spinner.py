@@ -62,6 +62,11 @@ def _spinner_proc(
 
     rng = sht.range(address)
 
+    # Hide the actual spinner glyph (;;; custom format = display nothing).
+    # Row status cells can mirror A1 via formula while controlling their own styling.
+    with suppress(Exception):
+        rng.number_format = ";;;"
+
     i = 0
     n = len(frames)
     while not stop.is_set():

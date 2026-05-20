@@ -23,4 +23,5 @@ OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     # in prefix expansion/toposort if requested).
     "node_sene": (),
     "node_volmass": (),
+    "volume": (),
 }

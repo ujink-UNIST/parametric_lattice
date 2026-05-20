@@ -122,6 +122,14 @@ class WriteQueue:
     def add_int(self, row_idx0: int, name: str, value: int) -> None:
         self.add_values(row_idx0, {str(name): int(value)})
 
+    def add_float(self, row_idx0: int, name: str, value: Any) -> None:
+        arr = np.asarray(value, dtype=float).reshape(-1)
+        if arr.size != 1:
+            raise ValueError(
+                f"{name}: expected scalar float value, got shape {np.shape(value)!r}"
+            )
+        self.add_values(row_idx0, {str(name): float(arr[0])})
+
     def add_str(self, row_idx0: int, name: str, value: str) -> None:
         self.add_values(row_idx0, {str(name): str(value)})
 
