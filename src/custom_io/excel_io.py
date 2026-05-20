@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
@@ -47,11 +48,21 @@ _OUTPUT_TABLE = "t_output"
 _CONFIG_TABLE = "t_config"
 
 # UI: lightweight progress indicator column (outside the t_input table)
-# For a running case at table body row i, we write to e.g. X{excel_row}.
+# For a running case at table body row i, we write to e.g. A{excel_row}.
 _STATUS_COL = "A"
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 _DONE_MARK = "✓"
 _FAIL_MARK = "✗"
+
+
+def _doevents(book: xw.Book) -> None:
+    """Let Excel process UI events (best-effort).
+
+    This helps Excel repaint the sheet after .value updates.
+    """
+
+    with suppress(Exception):
+        book.app.api.Run("DoEvents")
 
 
 class DataclassType(Protocol):
@@ -280,6 +291,7 @@ def run_cases(
                 status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
                 if status_cell is not None:
                     status_cell.value = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
+                    _doevents(book)
 
                 case_key = sim_case.to_string()
                 case_hash = build_case_hash(case_key)
@@ -328,10 +340,12 @@ def run_cases(
                 except Exception:
                     if status_cell is not None:
                         status_cell.value = _FAIL_MARK
+                        _doevents(book)
                     raise
 
                 if status_cell is not None:
                     status_cell.value = _DONE_MARK
+                    _doevents(book)
     except Exception as e:
         print(f"Error: {e}")
         raise
@@ -414,6 +428,7 @@ def run_postprocess(
                 status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
                 if status_cell is not None:
                     status_cell.value = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
+                    _doevents(book)
 
                 case_key = sim_case.to_string()
                 case_hash = build_case_hash(case_key)
@@ -442,10 +457,12 @@ def run_postprocess(
                 except Exception:
                     if status_cell is not None:
                         status_cell.value = _FAIL_MARK
+                        _doevents(book)
                     raise
 
                 if status_cell is not None:
                     status_cell.value = _DONE_MARK
+                    _doevents(book)
 
                 # Queue outputs
                 row0 = int(sim_case.row_idx)
