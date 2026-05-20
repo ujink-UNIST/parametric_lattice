@@ -16,6 +16,8 @@ from custom_io.excel_io import (
     run_selected_postprocess,
     selected_input_indices,
 )
+from custom_io.geometry_io import geometry_hash
+from custom_io.mesh_io import mesh_hash
 from custom_io.path_config import get_path_config
 
 
@@ -151,3 +153,43 @@ def open_results_action(repo_root: Path, book: xw.Book) -> None:
     case_hash, _ = _get_case_hash_and_lattice_relpath(book, row_idx)
     results_dir = cfg.results_root / "case" / case_hash
     Explorer.open_folder(results_dir)
+
+
+def open_geometry_db_action(repo_root: Path, book: xw.Book) -> None:
+    msg = ExcelMessenger(book)
+    _apply_path_config_from_book(book)
+    cfg = get_path_config()
+
+    row_idx = _first_selected_index(book)
+    if row_idx is None:
+        msg.info("t_input에서 열(row)을 선택한 뒤 실행하세요.")
+        return
+
+    input_table = find_table(book, "t_input")
+    header, body = get_table_data(input_table)
+    inputs = _get_simulation_cases(header, body)
+
+    sim_case = inputs[row_idx]
+    ghash = geometry_hash(sim_case)
+    geometry_dir = cfg.artifacts_root / "geometry_db" / ghash
+    Explorer.open_folder(geometry_dir)
+
+
+def open_mesh_db_action(repo_root: Path, book: xw.Book) -> None:
+    msg = ExcelMessenger(book)
+    _apply_path_config_from_book(book)
+    cfg = get_path_config()
+
+    row_idx = _first_selected_index(book)
+    if row_idx is None:
+        msg.info("t_input에서 열(row)을 선택한 뒤 실행하세요.")
+        return
+
+    input_table = find_table(book, "t_input")
+    header, body = get_table_data(input_table)
+    inputs = _get_simulation_cases(header, body)
+
+    sim_case = inputs[row_idx]
+    mhash = mesh_hash(sim_case)
+    mesh_dir = cfg.artifacts_root / "mesh_db" / mhash
+    Explorer.open_folder(mesh_dir)

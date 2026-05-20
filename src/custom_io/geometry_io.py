@@ -43,6 +43,12 @@ def _get_geometry_hash(sim_case: SimCase) -> str:
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
+def geometry_hash(sim_case: SimCase) -> str:
+    """Public wrapper for the stable geometry hash."""
+
+    return _get_geometry_hash(sim_case)
+
+
 def _geometry_db_dir(sim_case: SimCase) -> Path:
     artifacts_root = get_path_config().artifacts_root
     return artifacts_root / _GEOMETRY_DB_ROOT / _get_geometry_hash(sim_case)

@@ -36,6 +36,12 @@ def _get_mesh_hash(sim_case: SimCase) -> str:
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
+def mesh_hash(sim_case: SimCase) -> str:
+    """Public wrapper for the stable mesh hash."""
+
+    return _get_mesh_hash(sim_case)
+
+
 def _mesh_db_dir(sim_case: SimCase) -> Path:
     artifacts_root = get_path_config().artifacts_root
     return artifacts_root / _MESH_DB_ROOT / _get_mesh_hash(sim_case)
