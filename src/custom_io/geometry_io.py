@@ -55,10 +55,7 @@ def _geometry_db_dir(sim_case: SimCase) -> Path:
 
 
 def _geometry_db_path(sim_case: SimCase) -> Path:
-    return (
-        _geometry_db_dir(sim_case)
-        / f"{_GEOMETRY_DB_BASENAME}{_GEOMETRY_DB_SUFFIX}"
-    )
+    return _geometry_db_dir(sim_case) / f"{_GEOMETRY_DB_BASENAME}{_GEOMETRY_DB_SUFFIX}"
 
 
 def import_geometry_db(sim_case: SimCase) -> ApdlCommands:
