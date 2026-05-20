@@ -32,48 +32,58 @@ def _pause_to_close() -> None:
         pass
 
 
-@xw.sub
-def sub_run_selected():
-    run_selected_action(xw.Book.caller())
+from excel_integration.simulation_actions import (
+    open_case_artifacts_action,
+    open_geometry_db_action,
+    open_lattice_file_action,
+    open_mesh_db_action,
+    open_results_action,
+    run_all_action,
+    run_selected_action,
+    run_selected_postprocess_action,
+)
 
 
-@xw.sub
-def sub_run_all():
-    run_all_action(xw.Book.caller())
+def sub_run_selected() -> None:
+    book = xw.Book.caller()
+    run_selected_action(book)
 
 
-@xw.sub
-def sub_run_selected_postprocess():
-    run_selected_postprocess_action(xw.Book.caller())
+def sub_run_all() -> None:
+    book = xw.Book.caller()
+    run_all_action(book)
 
 
-@xw.sub
-def sub_open_lattice_file():
-    open_lattice_file_action(root, xw.Book.caller())
+def sub_run_selected_postprocess() -> None:
+    book = xw.Book.caller()
+    run_selected_postprocess_action(book)
 
 
-@xw.sub
-def sub_open_case_artifacts():
-    open_case_artifacts_action(root, xw.Book.caller())
+def sub_open_lattice_file() -> None:
+    book = xw.Book.caller()
+    open_lattice_file_action(root, book)
 
 
-@xw.sub
-def sub_open_geometry_artifacts():
-    open_geometry_db_action(root, xw.Book.caller())
+def sub_open_case_artifacts() -> None:
+    book = xw.Book.caller()
+    open_case_artifacts_action(root, book)
 
 
-@xw.sub
-def sub_open_mesh_artifacts():
-    open_mesh_db_action(root, xw.Book.caller())
+def sub_open_geometry_artifacts() -> None:
+    book = xw.Book.caller()
+    open_geometry_db_action(root, book)
 
 
-@xw.sub
-def sub_open_results():
-    open_results_action(root, xw.Book.caller())
+def sub_open_mesh_artifacts() -> None:
+    book = xw.Book.caller()
+    open_mesh_db_action(root, book)
+
+
+def sub_open_results() -> None:
+    book = xw.Book.caller()
+    open_results_action(root, book)
 
 
 def main() -> None:
-    # Entry point when running as a script (not from Excel).
-    # Note: Book.caller() only works when called from Excel.
     run_all_action(xw.Book.caller())
     _pause_to_close()
