@@ -1,23 +1,12 @@
 # excel_io.py
 
-from dataclasses import fields, is_dataclass
 import hashlib
 import json
 from pathlib import Path
-from typing import (
-    Any,
-    Dict,
-    List,
-    Protocol,
-    Tuple,
-    Type,
-    TypeVar,
-    cast,
-)
+from typing import Any, Protocol, TypeVar
 
-import xlwings as xw
-import numpy as np
-from xlwings.main import Table
+import xlwings as xw  # type: ignore[import-not-found]
+from xlwings.main import Table  # type: ignore[import-not-found]
 
 from core.parameters.element_type_params import (
     ElementTypeParams,
@@ -38,7 +27,6 @@ from custom_io.apdl_io import mapdl_session, run_commands
 from custom_io.excel_read import (
     read_float,
     read_int,
-    read_optional_bool,
     read_optional_float,
     read_str,
     read_Vector3,
@@ -50,7 +38,6 @@ from custom_io.path_config import (
     get_path_config,
     set_path_config,
 )
-from custom_io.socket_io import choose_free_port
 from pipeline import build_pipeline
 from postprocess.output_spec import POSTPROCESS_OUTPUT_SPEC
 from postprocess.pipeline import postprocess_commands
@@ -153,7 +140,7 @@ def run_selected(
     input_table: Table = find_table(book, _INPUT_TABLE)
     input_header, input_body = get_table_data(input_table)
 
-    inputs: Tuple[SimCase, ...] = _get_simulation_cases(input_header, input_body)
+    inputs: tuple[SimCase, ...] = _get_simulation_cases(input_header, input_body)
 
     hashes = [build_case_hash(sc.to_string()) for sc in inputs]
 
@@ -192,20 +179,12 @@ def run_selected_postprocess(
     input_table: Table = find_table(book, _INPUT_TABLE)
     input_header, input_body = get_table_data(input_table)
 
-    inputs: Tuple[SimCase, ...] = _get_simulation_cases(input_header, input_body)
-
-    hashes = [build_case_hash(sc.to_string()) for sc in inputs]
+    inputs: tuple[SimCase, ...] = _get_simulation_cases(input_header, input_body)
 
     output_table: Table = find_table(book, _OUTPUT_TABLE)
+    # Ensure output has the same number of rows as inputs so row_idx lookups are valid.
+    _ensure_table_rows(output_table, len(inputs))
     output_header, output_body = get_table_data(output_table)
-
-    _write_index_hash_to_output_table(
-        book,
-        inputs,
-        hashes,
-        selected_indices=selected_indices,
-        table_key=_OUTPUT_TABLE,
-    )
 
     if selected_indices is None:
         run_postprocess(book, inputs, output_header)
@@ -270,7 +249,7 @@ def selected_input_indices(
 
 def run_cases(
     book: xw.Book,
-    inputs: Tuple[SimCase, ...],
+    inputs: tuple[SimCase, ...],
     save_intermediate: bool = False,
 ):
     cfg = get_path_config()
@@ -322,9 +301,7 @@ def run_cases(
                 # written under this case.
                 run_commands(
                     mapdl,
-                    (
-                        f"/CWD,'{run_dir.as_posix()}'",
-                    ),
+                    (f"/CWD,'{run_dir.as_posix()}'",),
                 )
 
                 pipeline = build_pipeline(
@@ -343,7 +320,7 @@ def run_cases(
 
 def run_postprocess(
     book: xw.Book,
-    inputs: Tuple[SimCase, ...],
+    inputs: tuple[SimCase, ...],
     output_header: Header,
 ) -> None:
     """Run postprocessing for the given cases.
@@ -433,7 +410,6 @@ def run_postprocess(
                 )
                 run_commands(mapdl, prelude)
 
-                print(sim_case.to_string())
                 pipeline = postprocess_commands(
                     sim_case=sim_case,
                     needed=needed,
@@ -442,6 +418,12 @@ def run_postprocess(
 
                 # Queue outputs
                 row0 = int(sim_case.row_idx)
+
+                if "index" in needed:
+                    q.add_int(row0, "index", row0 + 1)
+
+                if "hash" in needed:
+                    q.add_str(row0, "hash", case_hash)
 
                 if "boundary_traction" in needed:
                     q.add_Vector3x3(
@@ -546,39 +528,6 @@ def _ensure_table_rows(table: Table, n_rows: int) -> None:
         list_rows.Add()
 
 
-def _write_index_hash_to_output_table(
-    book: xw.Book,
-    inputs: Tuple[SimCase, ...],
-    hashes: list[str],
-    selected_indices: tuple[int, ...] | None,
-    table_key: str = _OUTPUT_TABLE,
-) -> None:
-    output_table: Table = find_table(book, table_key)
-
-    # Ensure output has the same number of rows as inputs.
-    _ensure_table_rows(output_table, len(inputs))
-
-    col_index = _ensure_table_column(output_table, "index")
-    col_hash = _ensure_table_column(output_table, "hash")
-
-    body = output_table.data_body_range
-    if body is None:
-        return
-
-    col0_index = col_index - 1
-    col0_hash = col_hash - 1
-
-    if selected_indices is None:
-        rows_to_write = range(len(inputs))
-    else:
-        rows_to_write = selected_indices
-
-    for i in rows_to_write:
-        # Excel-side index is 1-based.
-        body[i, col0_index].value = inputs[i].row_idx + 1
-        body[i, col0_hash].value = hashes[i]
-
-
 def find_table(
     book: xw.Book,
     key: str,
@@ -664,8 +613,7 @@ def _validate_header_key(header: Any) -> str:
 
     if " " in s:
         raise ValueError(
-            f"Excel header {s!r} contains spaces. "
-            "Use snake_case (e.g. 'cell_size_X')."
+            f"Excel header {s!r} contains spaces. Use snake_case (e.g. 'cell_size_X')."
         )
 
     normalized = _normalize_header_key(s)
@@ -678,8 +626,8 @@ def _validate_header_key(header: Any) -> str:
 def _get_simulation_cases(
     input_header: Header,
     input_body: Body,
-) -> Tuple[SimCase, ...]:
-    cases: List[SimCase] = []
+) -> tuple[SimCase, ...]:
+    cases: list[SimCase] = []
 
     for i, row in enumerate(input_body):
         row_values = _map_header_to_row_values(input_header, row)
@@ -740,10 +688,10 @@ def _get_simulation_cases(
 def _map_header_to_row_values(
     input_header: Header,
     row: tuple[Any, ...],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if len(input_header) != len(row):
         raise ValueError(
-            "Header and row lengths do not match: " f"{len(input_header)} != {len(row)}"
+            f"Header and row lengths do not match: {len(input_header)} != {len(row)}"
         )
 
     keys = [_validate_header_key(h) for h in input_header]
@@ -752,4 +700,4 @@ def _map_header_to_row_values(
         dupes = {k for k in keys if keys.count(k) > 1}
         raise ValueError("Duplicate Excel headers: " + ", ".join(sorted(dupes)))
 
-    return dict(zip(keys, row))
+    return dict(zip(keys, row, strict=True))
