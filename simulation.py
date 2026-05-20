@@ -92,7 +92,6 @@ def main() -> None:
     book = xw.Book.caller()
 
     def _work() -> None:
-        run_all_action(book)
         _pause_to_close()
 
     _run_with_spinner(book, _work)

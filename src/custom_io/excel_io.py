@@ -287,10 +287,11 @@ def run_cases(
             jobname=jobname,
             cleanup_on_exit=False,
         ) as mapdl:
-            for i, sim_case in enumerate(inputs):
+            for sim_case in inputs:
                 status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
                 if status_cell is not None:
-                    status_cell.value = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
+                    # Mirror the global spinner cell (Sheet1!A1) while this case runs.
+                    status_cell.formula = "=Sheet1!$A$1"
                     _doevents(book)
 
                 case_key = sim_case.to_string()
@@ -424,10 +425,11 @@ def run_postprocess(
             cleanup_on_exit=False,
         ) as mapdl:
             # Run per-case postprocess APDL and queue requested results.
-            for i, sim_case in enumerate(inputs):
+            for sim_case in inputs:
                 status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
                 if status_cell is not None:
-                    status_cell.value = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
+                    # Mirror the global spinner cell (Sheet1!A1) while this case runs.
+                    status_cell.formula = "=Sheet1!$A$1"
                     _doevents(book)
 
                 case_key = sim_case.to_string()
@@ -500,12 +502,14 @@ def run_postprocess(
                         "boundary_stress",
                         mapdl.parameters["pp_boundary_stress"],
                     )
+
+                # Write this case's outputs immediately so Excel updates row-by-row.
+                q.flush(output_table)
     except Exception as e:
         print(f"Error: {e}")
         raise
 
-    # Flush queued writes at the end (batch write). Only rows touched are written.
-    q.flush(output_table)
+    # Note: we flush after each case for more responsive Excel updates.
 
 
 def build_case_hash(key: str):

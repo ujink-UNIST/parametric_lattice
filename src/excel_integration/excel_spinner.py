@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from multiprocessing import Event, Process
 from pathlib import Path
 
-_FRAMES: tuple[str, ...] = ("|", "/", "-", "\\")
+_FRAMES: tuple[str, ...] = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
 
 def _find_open_book(app, fullname: str):
