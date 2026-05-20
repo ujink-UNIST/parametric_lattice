@@ -13,7 +13,9 @@ if str(src_dir) not in sys.path:
 
 from excel_integration.simulation_actions import (
     open_case_artifacts_action,
+    open_geometry_db_action,
     open_lattice_file_action,
+    open_mesh_db_action,
     open_results_action,
     run_all_action,
     run_selected_action,
@@ -53,6 +55,16 @@ def sub_open_lattice_file():
 @xw.sub
 def sub_open_case_artifacts():
     open_case_artifacts_action(root, xw.Book.caller())
+
+
+@xw.sub
+def sub_open_geometry_artifacts():
+    open_geometry_db_action(root, xw.Book.caller())
+
+
+@xw.sub
+def sub_open_mesh_artifacts():
+    open_mesh_db_action(root, xw.Book.caller())
 
 
 @xw.sub
