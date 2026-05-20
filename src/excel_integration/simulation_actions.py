@@ -4,7 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-import xlwings as xw
+import json
+import subprocess
+import sys
+
+import xlwings as xw  # type: ignore[import-not-found]
 
 from custom_io.excel_io import (
     _apply_path_config_from_book,
@@ -12,8 +16,6 @@ from custom_io.excel_io import (
     build_case_hash,
     find_table,
     get_table_data,
-    run_selected,
-    run_selected_postprocess,
     selected_input_indices,
 )
 from custom_io.geometry_io import geometry_hash
@@ -62,8 +64,6 @@ class Explorer:
 
     @staticmethod
     def select_file(path: Path) -> None:
-        import subprocess
-
         p = path.resolve()
         subprocess.Popen(f'explorer /select,"{p}"')
 
@@ -92,18 +92,66 @@ def _get_case_hash_and_lattice_relpath(
     return case_hash, lattice_rel
 
 
+def _python_for_background() -> str:
+    """Prefer pythonw.exe so we don't flash a console when spawning."""
+
+    exe = Path(sys.executable)
+    if exe.name.lower() == "python.exe":
+        pythonw = exe.with_name("pythonw.exe")
+        if pythonw.exists():
+            return str(pythonw)
+    return str(exe)
+
+
+def _spawn_background(
+    book: xw.Book,
+    mode: str,
+    selected_indices: tuple[int, ...] | None,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    worker = repo_root / "excel_background.py"
+
+    # NOTE: selected_indices is serialized as JSON because xlwings may pass tuples.
+    selected_json = json.dumps(selected_indices)
+
+    cmd = [
+        _python_for_background(),
+        str(worker),
+        "--pid",
+        str(book.app.pid),
+        "--book",
+        str(book.fullname),
+        "--mode",
+        mode,
+        "--selected",
+        selected_json,
+    ]
+
+    # Best-effort detach on Windows.
+    creationflags = 0
+    creationflags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+    creationflags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+
+    subprocess.Popen(
+        cmd,
+        cwd=str(repo_root),
+        close_fds=True,
+        creationflags=creationflags,
+    )
+
+
 def run_selected_action(book: xw.Book) -> None:
     selected_indices = selected_input_indices(book)
-    run_selected(book, selected_indices)
+    _spawn_background(book, mode="run", selected_indices=selected_indices)
 
 
 def run_all_action(book: xw.Book) -> None:
-    run_selected(book, None)
+    _spawn_background(book, mode="run", selected_indices=None)
 
 
 def run_selected_postprocess_action(book: xw.Book) -> None:
     selected_indices = selected_input_indices(book)
-    run_selected_postprocess(book, selected_indices)
+    _spawn_background(book, mode="postprocess", selected_indices=selected_indices)
 
 
 def open_lattice_file_action(repo_root: Path, book: xw.Book) -> None:
