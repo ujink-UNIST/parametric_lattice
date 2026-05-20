@@ -15,6 +15,9 @@ cache/
 artifacts/
 results/
 ~$*.xlsm
+simulation.xlsm
+
+.pi-lens/
 
 .vscode/*.json
 
