@@ -46,6 +46,13 @@ _INPUT_TABLE = "t_input"
 _OUTPUT_TABLE = "t_output"
 _CONFIG_TABLE = "t_config"
 
+# UI: lightweight progress indicator column (outside the t_input table)
+# For a running case at table body row i, we write to e.g. X{excel_row}.
+_STATUS_COL = "A"
+_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+_DONE_MARK = "✓"
+_FAIL_MARK = "✗"
+
 
 class DataclassType(Protocol):
     __dataclass_fields__: dict[str, Any]
@@ -184,7 +191,7 @@ def run_selected_postprocess(
     output_table: Table = find_table(book, _OUTPUT_TABLE)
     # Ensure output has the same number of rows as inputs so row_idx lookups are valid.
     _ensure_table_rows(output_table, len(inputs))
-    output_header, output_body = get_table_data(output_table)
+    output_header, _output_body = get_table_data(output_table)
 
     if selected_indices is None:
         run_postprocess(book, inputs, output_header)
@@ -269,7 +276,11 @@ def run_cases(
             jobname=jobname,
             cleanup_on_exit=False,
         ) as mapdl:
-            for sim_case in inputs:
+            for i, sim_case in enumerate(inputs):
+                status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
+                if status_cell is not None:
+                    status_cell.value = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
+
                 case_key = sim_case.to_string()
                 case_hash = build_case_hash(case_key)
 
@@ -312,7 +323,15 @@ def run_cases(
                 # Ensure jobname is set after /CLEAR inside the pipeline.
                 pipeline = pipeline[:1] + ("/FILNAME,case",) + pipeline[1:]
 
-                run_commands(mapdl, pipeline)
+                try:
+                    run_commands(mapdl, pipeline)
+                except Exception:
+                    if status_cell is not None:
+                        status_cell.value = _FAIL_MARK
+                    raise
+
+                if status_cell is not None:
+                    status_cell.value = _DONE_MARK
     except Exception as e:
         print(f"Error: {e}")
         raise
@@ -391,7 +410,11 @@ def run_postprocess(
             cleanup_on_exit=False,
         ) as mapdl:
             # Run per-case postprocess APDL and queue requested results.
-            for sim_case in inputs:
+            for i, sim_case in enumerate(inputs):
+                status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
+                if status_cell is not None:
+                    status_cell.value = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
+
                 case_key = sim_case.to_string()
                 case_hash = build_case_hash(case_key)
                 run_dir = base_run_dir / f"{case_hash}"
@@ -414,7 +437,15 @@ def run_postprocess(
                     sim_case=sim_case,
                     needed=needed,
                 )
-                run_commands(mapdl, pipeline)
+                try:
+                    run_commands(mapdl, pipeline)
+                except Exception:
+                    if status_cell is not None:
+                        status_cell.value = _FAIL_MARK
+                    raise
+
+                if status_cell is not None:
+                    status_cell.value = _DONE_MARK
 
                 # Queue outputs
                 row0 = int(sim_case.row_idx)
@@ -532,12 +563,45 @@ def find_table(
     book: xw.Book,
     key: str,
 ) -> Table:
+    table, _sheet = find_table_and_sheet(book, key)
+    return table
+
+
+def find_table_and_sheet(
+    book: xw.Book,
+    key: str,
+) -> tuple[Table, xw.Sheet]:
     for sheet in book.sheets:
         for table in sheet.tables:
             if table.name == key or table.display_name == key:
-                return table
+                return table, sheet
 
     raise KeyError(f"Could not find Excel table {key!r}")
+
+
+def _status_range_for_input_row(book: xw.Book, row_idx: int) -> xw.Range | None:
+    """Return the status cell range for a given t_input body row.
+
+    We write to a fixed column (default: X) on the same sheet that contains
+    `t_input`, at the Excel row corresponding to `row_idx` in the table body.
+    """
+
+    try:
+        t, sheet = find_table_and_sheet(book, _INPUT_TABLE)
+    except KeyError:
+        return None
+
+    body = t.data_body_range
+    if body is None:
+        return None
+
+    excel_row = int(body.row) + int(row_idx)
+    addr = f"{_STATUS_COL}{excel_row}"
+
+    try:
+        return sheet.range(addr)
+    except Exception:
+        return None
 
 
 def get_table_data(
