@@ -20,8 +20,10 @@ OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "boundary_traction": ("boundary_force",),
     "boundary_stress": ("boundary_traction",),
     "volume_stress": (),
-    # Average stress requires both the volume-weighted sum and the total volume.
-    "avg_volume_stress": ("volume_stress", "volume"),
+    "volume_energy": (),
+    # Volume averages require both the sum and the total volume.
+    "volume_avg_stress": ("volume_stress", "volume"),
+    "volume_avg_energy": ("volume_energy", "volume"),
     # Intermediate outputs (not written to Excel). Kept here so they can
     # participate in prefix expansion/toposort if requested.
     "elem_sene": (),

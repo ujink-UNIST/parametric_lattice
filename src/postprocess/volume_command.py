@@ -62,6 +62,40 @@ def build_volume_stress_commands_(ctx: PostprocessContext) -> ApdlCommands:
     return tuple(cmd)
 
 
+def build_volume_energy_commands_(ctx: PostprocessContext) -> ApdlCommands:
+    """Compute total strain energy (sum over elements).
+
+    Output MAPDL parameters:
+      - pp_volume_energy: scalar
+
+    Notes:
+      - Uses ETABLE item SENE (element strain energy).
+      - Despite the name, this is an energy (not multiplied by volume).
+        A natural derived quantity is energy density avg:
+          volume_avg_energy = pp_volume_energy / pp_volume
+    """
+
+    _ = ctx
+
+    cmd: list[str] = [
+        apdl_command("/POST1", "postprocess: total strain energy"),
+        apdl_command("SET,LAST", "use last substep"),
+        apdl_command("ALLSEL,ALL"),
+        apdl_command("ESEL,ALL"),
+        apdl_command("ETABLE,pp__SENE,SENE", "element strain energy"),
+        apdl_command("pp_volume_energy=0", "init total strain energy"),
+        apdl_command("*GET,pp__eid,ELEM,0,NUM,MIN", "first selected element"),
+        apdl_command("*DOWHILE,pp__eid,GT,0"),
+        apdl_command("  *GET,pp__esene,ELEM,pp__eid,ETAB,pp__SENE", "element SENE"),
+        apdl_command("  pp_volume_energy=pp_volume_energy+pp__esene", "accumulate"),
+        apdl_command("  *GET,pp__eid,ELEM,pp__eid,NXTH"),
+        apdl_command("*ENDDO"),
+        apdl_command("ALLSEL,ALL"),
+    ]
+
+    return tuple(cmd)
+
+
 def build_volume_commands_(ctx: PostprocessContext) -> ApdlCommands:
     """Compute total volume of all selected elements.
 

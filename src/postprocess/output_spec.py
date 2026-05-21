@@ -23,6 +23,8 @@ POSTPROCESS_OUTPUT_SPEC: dict[str, int] = {
     "boundary_moment": 9,
     "boundary_stress": 6,
     "volume_stress": 6,
-    "avg_volume_stress": 6,
+    "volume_avg_stress": 6,
+    "volume_energy": 1,
+    "volume_avg_energy": 1,
     "volume": 1,
 }

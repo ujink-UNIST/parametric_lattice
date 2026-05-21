@@ -563,7 +563,7 @@ def run_postprocess(
                         mapdl.parameters["pp_volume_stress"],
                     )
 
-                if "avg_volume_stress" in needed:
+                if "volume_avg_stress" in needed:
                     vol = float(mapdl.parameters["pp_volume"])
                     vs = mapdl.parameters["pp_volume_stress"]
                     if hasattr(vs, "ravel"):
@@ -575,11 +575,22 @@ def run_postprocess(
                     else:
                         avg6 = [x / vol for x in vs6]
 
-                    avg6_excel = np.asarray(
-                        [avg6[0], avg6[1], avg6[2], avg6[3], avg6[4], avg6[5]],
-                        dtype=float,
+                    q.add_Vector6(
+                        row0,
+                        "volume_avg_stress",
+                        np.asarray(avg6, dtype=float),
                     )
-                    q.add_Vector6(row0, "avg_volume_stress", avg6_excel)
+
+                if "volume_energy" in needed:
+                    q.add_float(row0, "volume_energy", mapdl.parameters["pp_volume_energy"])
+
+                if "volume_avg_energy" in needed:
+                    vol = float(mapdl.parameters["pp_volume"])
+                    ve = float(mapdl.parameters["pp_volume_energy"])
+                    if vol == 0.0:
+                        q.add_float(row0, "volume_avg_energy", float("nan"))
+                    else:
+                        q.add_float(row0, "volume_avg_energy", ve / vol)
 
                 q.flush(output_table)
     except Exception as e:
