@@ -501,61 +501,70 @@ def run_postprocess(
                 _set_status_running(book, status_cell)
 
                 # Validate postprocess outputs against this case's simulation_type.
-                # If an output is not supported, we write #N/A for those columns
-                # (instead of raising), and skip MAPDL postprocess for this case.
+                # Policy: run MAPDL postprocess for outputs that are allowed for
+                # this simulation_type, and write #N/A (=NA()) for disallowed
+                # outputs.
                 sim_type = sim_case.post_mesh_spec.setup.sim_type
-                disallowed = [
-                    p for p in needed.keys() if not is_postprocess_output_allowed(p, sim_type)
+
+                allowed_needed: dict[str, int] = {
+                    p: n for p, n in needed.items() if is_postprocess_output_allowed(p, sim_type)
+                }
+                disallowed = [p for p in needed.keys() if p not in allowed_needed]
+
+                from custom_io.excel_write import EXCEL_NA
+
+                row0 = int(sim_case.row_idx)
+
+                # Always write required scalars.
+                case_key = sim_case.to_string()
+                case_hash = build_case_hash(case_key)
+                if "index" in needed:
+                    q.add_int(row0, "index", row0 + 1)
+                if "hash" in needed:
+                    q.add_str(row0, "hash", case_hash)
+
+                # Write #N/A for unsupported outputs.
+                for p in disallowed:
+                    ncomp = needed.get(p, 1)
+                    if ncomp == 1:
+                        q.add_float(row0, p, EXCEL_NA)
+                    elif ncomp == 6:
+                        q.add_values(
+                            row0,
+                            {
+                                f"{p}_X": EXCEL_NA,
+                                f"{p}_Y": EXCEL_NA,
+                                f"{p}_Z": EXCEL_NA,
+                                f"{p}_XY": EXCEL_NA,
+                                f"{p}_YZ": EXCEL_NA,
+                                f"{p}_XZ": EXCEL_NA,
+                            },
+                        )
+                    elif ncomp == 9:
+                        q.add_values(
+                            row0,
+                            {
+                                f"{p}_XX": EXCEL_NA,
+                                f"{p}_XY": EXCEL_NA,
+                                f"{p}_XZ": EXCEL_NA,
+                                f"{p}_YX": EXCEL_NA,
+                                f"{p}_YY": EXCEL_NA,
+                                f"{p}_YZ": EXCEL_NA,
+                                f"{p}_ZX": EXCEL_NA,
+                                f"{p}_ZY": EXCEL_NA,
+                                f"{p}_ZZ": EXCEL_NA,
+                            },
+                        )
+                    else:
+                        # For any future component counts, fall back to scalar #N/A.
+                        q.add_float(row0, p, EXCEL_NA)
+
+                # If nothing beyond index/hash is allowed, just flush the N/A
+                # values and move on.
+                nontrivial_allowed = [
+                    p for p in allowed_needed.keys() if p not in ("index", "hash")
                 ]
-                if disallowed:
-                    from custom_io.excel_write import EXCEL_NA
-
-                    row0 = int(sim_case.row_idx)
-
-                    # Always write required scalars.
-                    if "index" in needed:
-                        q.add_int(row0, "index", row0 + 1)
-                    if "hash" in needed:
-                        case_key = sim_case.to_string()
-                        case_hash = build_case_hash(case_key)
-                        q.add_str(row0, "hash", case_hash)
-
-                    # Write #N/A for unsupported outputs.
-                    for p in disallowed:
-                        ncomp = needed.get(p, 1)
-                        if ncomp == 1:
-                            q.add_float(row0, p, EXCEL_NA)
-                        elif ncomp == 6:
-                            q.add_values(
-                                row0,
-                                {
-                                    f"{p}_X": EXCEL_NA,
-                                    f"{p}_Y": EXCEL_NA,
-                                    f"{p}_Z": EXCEL_NA,
-                                    f"{p}_XY": EXCEL_NA,
-                                    f"{p}_YZ": EXCEL_NA,
-                                    f"{p}_XZ": EXCEL_NA,
-                                },
-                            )
-                        elif ncomp == 9:
-                            q.add_values(
-                                row0,
-                                {
-                                    f"{p}_XX": EXCEL_NA,
-                                    f"{p}_XY": EXCEL_NA,
-                                    f"{p}_XZ": EXCEL_NA,
-                                    f"{p}_YX": EXCEL_NA,
-                                    f"{p}_YY": EXCEL_NA,
-                                    f"{p}_YZ": EXCEL_NA,
-                                    f"{p}_ZX": EXCEL_NA,
-                                    f"{p}_ZY": EXCEL_NA,
-                                    f"{p}_ZZ": EXCEL_NA,
-                                },
-                            )
-                        else:
-                            # For any future component counts, fall back to scalar #N/A.
-                            q.add_float(row0, p, EXCEL_NA)
-
+                if not nontrivial_allowed:
                     q.flush(output_table)
                     _set_status_done(book, status_cell)
                     continue
@@ -576,7 +585,7 @@ def run_postprocess(
 
                 pipeline = postprocess_commands(
                     sim_case=sim_case,
-                    needed=needed,
+                    needed=allowed_needed,
                 )
 
                 # Save full postprocess command stream for reproducibility.
@@ -587,7 +596,7 @@ def run_postprocess(
                     metadata={
                         "case_hash": case_hash,
                         "jobname": jobname,
-                        "needed": ",".join(sorted(needed.keys())),
+                        "needed": ",".join(sorted(allowed_needed.keys())),
                     },
                 )
 
@@ -602,51 +611,51 @@ def run_postprocess(
                 # Queue outputs
                 row0 = int(sim_case.row_idx)
 
-                if "index" in needed:
+                if "index" in allowed_needed:
                     q.add_int(row0, "index", row0 + 1)
 
-                if "hash" in needed:
+                if "hash" in allowed_needed:
                     q.add_str(row0, "hash", case_hash)
 
-                if "volume" in needed:
+                if "volume" in allowed_needed:
                     q.add_float(row0, "volume", mapdl.parameters["pp_volume"])
 
-                if "boundary_traction" in needed:
+                if "boundary_traction" in allowed_needed:
                     q.add_Vector3x3(
                         row0,
                         "boundary_traction",
                         mapdl.parameters["pp_boundary_traction"],
                     )
 
-                if "boundary_force" in needed:
+                if "boundary_force" in allowed_needed:
                     q.add_Vector3x3(
                         row0,
                         "boundary_force",
                         mapdl.parameters["pp_boundary_force"],
                     )
 
-                if "boundary_moment" in needed:
+                if "boundary_moment" in allowed_needed:
                     q.add_Vector3x3(
                         row0,
                         "boundary_moment",
                         mapdl.parameters["pp_boundary_moment"],
                     )
 
-                if "boundary_stress" in needed:
+                if "boundary_stress" in allowed_needed:
                     q.add_Vector6(
                         row0,
                         "boundary_stress",
                         mapdl.parameters["pp_boundary_stress"],
                     )
 
-                if "volume_stress" in needed:
+                if "volume_stress" in allowed_needed:
                     q.add_Vector6(
                         row0,
                         "volume_stress",
                         mapdl.parameters["pp_volume_stress"],
                     )
 
-                if "volume_avg_stress" in needed:
+                if "volume_avg_stress" in allowed_needed:
                     vol = float(mapdl.parameters["pp_volume"])
                     vs = mapdl.parameters["pp_volume_stress"]
                     if hasattr(vs, "ravel"):
@@ -664,10 +673,10 @@ def run_postprocess(
                         np.asarray(avg6, dtype=float),
                     )
 
-                if "volume_energy" in needed:
+                if "volume_energy" in allowed_needed:
                     q.add_float(row0, "volume_energy", mapdl.parameters["pp_volume_energy"])
 
-                if "volume_avg_energy" in needed:
+                if "volume_avg_energy" in allowed_needed:
                     vol = float(mapdl.parameters["pp_volume"])
                     ve = float(mapdl.parameters["pp_volume_energy"])
                     if vol == 0.0:
@@ -678,7 +687,7 @@ def run_postprocess(
                 # Modal resonant frequencies (mode 1..20)
                 for i in range(1, 21):
                     key = f"res_freq_{i}"
-                    if key in needed:
+                    if key in allowed_needed:
                         q.add_float(row0, key, mapdl.parameters[f"pp_res_freq_{i}"])
 
                 q.flush(output_table)
