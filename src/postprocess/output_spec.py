@@ -28,13 +28,18 @@ POSTPROCESS_OUTPUT_SPEC: dict[str, int] = {
     "effective_youngs_modulus": 3,
     "effective_shear_modulus": 3,
     "boundary_touch_area": 3,
+    "boundary_touch_area_ratio": 3,
+    "contact_traction": 9,
+    "contact_stress": 6,
     "volume_stress": 6,
     "volume_avg_stress": 6,
     "volume_energy": 1,
     "volume_avg_energy": 1,
     "volume": 1,
-    # Modal resonant frequencies (scalar columns res_freq_1 .. res_freq_20)
+    # Modal outputs
     **{f"res_freq_{i}": 1 for i in range(1, 21)},
+    **{f"part_factor_{i}": 3 for i in range(1, 21)},
+    **{f"eff_modal_mass_{i}": 3 for i in range(1, 21)},
 }
 
 # Output availability by simulation_type (from Excel t_input.simulation_type).
@@ -58,6 +63,8 @@ POSTPROCESS_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
     "volume": _SIM_TYPES_ALL,
     # Modal-only outputs
     **{f"res_freq_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
+    **{f"part_factor_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
+    **{f"eff_modal_mass_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
     # Everything else: only xx..xz
     "boundary_traction": _SIM_TYPES_STATIC,
     "boundary_force": _SIM_TYPES_STATIC,
@@ -68,6 +75,9 @@ POSTPROCESS_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
     "effective_youngs_modulus": _SIM_TYPES_STATIC_NORMAL,
     "effective_shear_modulus": _SIM_TYPES_STATIC_SHEAR,
     "boundary_touch_area": _SIM_TYPES_STATIC,
+    "boundary_touch_area_ratio": _SIM_TYPES_STATIC,
+    "contact_traction": _SIM_TYPES_STATIC,
+    "contact_stress": _SIM_TYPES_STATIC,
     "volume_stress": _SIM_TYPES_STATIC,
     "volume_avg_stress": _SIM_TYPES_STATIC,
     "volume_energy": _SIM_TYPES_STATIC,

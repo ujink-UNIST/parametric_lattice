@@ -26,6 +26,14 @@ OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "effective_shear_modulus": ("boundary_modulus",),
     # Mesh-derived (computed in Python). No MAPDL dependency.
     "boundary_touch_area": (),
+    "boundary_touch_area_ratio": ("boundary_touch_area",),
+    # Contact traction/stress: derived in Python (boundary_force normalized by touch area).
+    "contact_traction": ("boundary_force", "boundary_touch_area"),
+    "contact_stress": ("contact_traction",),
+    # Modal-only
+    **{f"res_freq_{i}": () for i in range(1, 21)},
+    **{f"part_factor_{i}": () for i in range(1, 21)},
+    **{f"eff_modal_mass_{i}": () for i in range(1, 21)},
     "volume_stress": (),
     "volume_energy": (),
     # Volume averages require both the sum and the total volume.

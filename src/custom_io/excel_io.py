@@ -865,8 +865,29 @@ def run_postprocess(
                 if "hash" in allowed_needed:
                     q.add_str(row0, "hash", case_hash)
 
+                # Volume is computed in Python from mesh.cdb for robustness.
+                volume_val: float | None = None
+                if (
+                    "volume" in allowed_needed
+                    or "volume_avg_stress" in allowed_needed
+                    or "volume_avg_energy" in allowed_needed
+                ):
+                    from custom_io.boundary_touch_area import compute_total_volume_from_cdb
+                    from custom_io.mesh_io import mesh_db_dir
+
+                    cdb_path = mesh_db_dir(sim_case) / "mesh.cdb"
+                    try:
+                        volume_val = compute_total_volume_from_cdb(cdb_path=cdb_path)
+                    except Exception:
+                        volume_val = None
+
                 if "volume" in allowed_needed:
-                    q.add_float(row0, "volume", mapdl.parameters["pp_volume"])
+                    if volume_val is None:
+                        from custom_io.excel_write import EXCEL_NA
+
+                        q.add_float(row0, "volume", EXCEL_NA)
+                    else:
+                        q.add_float(row0, "volume", volume_val)
 
                 if "boundary_traction" in allowed_needed:
                     q.add_Vector3x3(
@@ -1015,16 +1036,16 @@ def run_postprocess(
                     )
 
                 if "volume_avg_stress" in allowed_needed:
-                    vol = float(mapdl.parameters["pp_volume"])
                     vs = mapdl.parameters["pp_volume_stress"]
                     if hasattr(vs, "ravel"):
                         vs6 = [float(x) for x in vs.ravel().tolist()]
                     else:
                         vs6 = [float(x) for x in vs]
-                    if vol == 0.0:
+
+                    if volume_val is None or volume_val == 0.0:
                         avg6 = [float("nan")] * 6
                     else:
-                        avg6 = [x / vol for x in vs6]
+                        avg6 = [x / float(volume_val) for x in vs6]
 
                     q.add_Vector6(
                         row0,
@@ -1038,19 +1059,26 @@ def run_postprocess(
                     )
 
                 if "volume_avg_energy" in allowed_needed:
-                    vol = float(mapdl.parameters["pp_volume"])
                     ve = float(mapdl.parameters["pp_volume_energy"])
-                    if vol == 0.0:
+                    if volume_val is None or volume_val == 0.0:
                         q.add_float(row0, "volume_avg_energy", float("nan"))
                     else:
-                        q.add_float(row0, "volume_avg_energy", ve / vol)
+                        q.add_float(row0, "volume_avg_energy", ve / float(volume_val))
 
                 # Mesh-derived boundary touch area (solid-only assumption)
-                if "boundary_touch_area" in allowed_needed:
+                # Also used internally for contact_traction/contact_stress.
+                touch_area: tuple[float, float, float] | None = None
+                touch_area_ok = False
+                if (
+                    "boundary_touch_area" in allowed_needed
+                    or "boundary_touch_area_ratio" in allowed_needed
+                    or "contact_traction" in allowed_needed
+                    or "contact_stress" in allowed_needed
+                ):
                     from custom_io.boundary_touch_area import compute_boundary_touch_area_from_cdb
                     from custom_io.mesh_io import mesh_db_dir
+                    from custom_io.excel_write import EXCEL_NA
 
-                    # Use mesh archive (.cdb) written under artifacts/mesh_db/<mesh_hash>/mesh.cdb
                     cdb_path = mesh_db_dir(sim_case) / "mesh.cdb"
                     tol = 1e-6 * float(sim_case.pre_mesh_spec.meshing.max_element_size)
                     try:
@@ -1059,31 +1087,163 @@ def run_postprocess(
                             size_xyz=sim_case.pre_mesh_spec.geometry.size,
                             tol=tol,
                         )
-                        q.add_values(
-                            row0,
-                            {
-                                "boundary_touch_area_X": float(res.ax),
-                                "boundary_touch_area_Y": float(res.ay),
-                                "boundary_touch_area_Z": float(res.az),
-                            },
-                        )
+                        touch_area = (float(res.ax), float(res.ay), float(res.az))
+                        touch_area_ok = all(a > 0.0 for a in touch_area)
+
+                        if "boundary_touch_area" in allowed_needed:
+                            q.add_values(
+                                row0,
+                                {
+                                    "boundary_touch_area_X": touch_area[0],
+                                    "boundary_touch_area_Y": touch_area[1],
+                                    "boundary_touch_area_Z": touch_area[2],
+                                },
+                            )
+
+                        if "boundary_touch_area_ratio" in allowed_needed:
+                            sx, sy, sz = (float(x) for x in sim_case.pre_mesh_spec.geometry.size)
+                            ax_full = sy * sz
+                            ay_full = sx * sz
+                            az_full = sx * sy
+
+                            def _ratio(a_touch: float, a_full: float):
+                                return EXCEL_NA if a_full == 0.0 else (a_touch / a_full)
+
+                            q.add_values(
+                                row0,
+                                {
+                                    "boundary_touch_area_ratio_X": _ratio(touch_area[0], ax_full),
+                                    "boundary_touch_area_ratio_Y": _ratio(touch_area[1], ay_full),
+                                    "boundary_touch_area_ratio_Z": _ratio(touch_area[2], az_full),
+                                },
+                            )
                     except Exception:
-                        from custom_io.excel_write import EXCEL_NA
+                        touch_area = None
+                        touch_area_ok = False
+                        if "boundary_touch_area" in allowed_needed:
+                            q.add_values(
+                                row0,
+                                {
+                                    "boundary_touch_area_X": EXCEL_NA,
+                                    "boundary_touch_area_Y": EXCEL_NA,
+                                    "boundary_touch_area_Z": EXCEL_NA,
+                                },
+                            )
+                        if "boundary_touch_area_ratio" in allowed_needed:
+                            q.add_values(
+                                row0,
+                                {
+                                    "boundary_touch_area_ratio_X": EXCEL_NA,
+                                    "boundary_touch_area_ratio_Y": EXCEL_NA,
+                                    "boundary_touch_area_ratio_Z": EXCEL_NA,
+                                },
+                            )
 
-                        q.add_values(
-                            row0,
-                            {
-                                "boundary_touch_area_X": EXCEL_NA,
-                                "boundary_touch_area_Y": EXCEL_NA,
-                                "boundary_touch_area_Z": EXCEL_NA,
-                            },
-                        )
+                # Contact traction/stress (boundary_force normalized by touch area)
+                if "contact_traction" in allowed_needed or "contact_stress" in allowed_needed:
+                    from custom_io.excel_write import EXCEL_NA
 
-                # Modal resonant frequencies (mode 1..20)
+                    if not touch_area_ok or touch_area is None:
+                        if "contact_traction" in allowed_needed:
+                            q.add_values(
+                                row0,
+                                {
+                                    "contact_traction_XX": EXCEL_NA,
+                                    "contact_traction_XY": EXCEL_NA,
+                                    "contact_traction_XZ": EXCEL_NA,
+                                    "contact_traction_YX": EXCEL_NA,
+                                    "contact_traction_YY": EXCEL_NA,
+                                    "contact_traction_YZ": EXCEL_NA,
+                                    "contact_traction_ZX": EXCEL_NA,
+                                    "contact_traction_ZY": EXCEL_NA,
+                                    "contact_traction_ZZ": EXCEL_NA,
+                                },
+                            )
+                        if "contact_stress" in allowed_needed:
+                            q.add_values(
+                                row0,
+                                {
+                                    "contact_stress_X": EXCEL_NA,
+                                    "contact_stress_Y": EXCEL_NA,
+                                    "contact_stress_Z": EXCEL_NA,
+                                    "contact_stress_XY": EXCEL_NA,
+                                    "contact_stress_YZ": EXCEL_NA,
+                                    "contact_stress_XZ": EXCEL_NA,
+                                },
+                            )
+                    else:
+                        # pp_boundary_force is (3,3): rows X/Y/Z faces, cols X/Y/Z components.
+                        bf = np.asarray(mapdl.parameters["pp_boundary_force"], dtype=float).reshape(3, 3)
+                        ax, ay, az = touch_area
+                        ct = np.zeros((3, 3), dtype=float)
+                        # Normalize each face-row by the touch area of that axis.
+                        ct[0, :] = bf[0, :] / ax
+                        ct[1, :] = bf[1, :] / ay
+                        ct[2, :] = bf[2, :] / az
+
+                        if "contact_traction" in allowed_needed:
+                            q.add_values(
+                                row0,
+                                {
+                                    "contact_traction_XX": float(ct[0, 0]),
+                                    "contact_traction_XY": float(ct[0, 1]),
+                                    "contact_traction_XZ": float(ct[0, 2]),
+                                    "contact_traction_YX": float(ct[1, 0]),
+                                    "contact_traction_YY": float(ct[1, 1]),
+                                    "contact_traction_YZ": float(ct[1, 2]),
+                                    "contact_traction_ZX": float(ct[2, 0]),
+                                    "contact_traction_ZY": float(ct[2, 1]),
+                                    "contact_traction_ZZ": float(ct[2, 2]),
+                                },
+                            )
+
+                        if "contact_stress" in allowed_needed:
+                            # Symmetric Voigt [X,Y,Z,XY,YZ,XZ] from traction matrix.
+                            sxx = ct[0, 0]
+                            syy = ct[1, 1]
+                            szz = ct[2, 2]
+                            sxy = 0.5 * (ct[0, 1] + ct[1, 0])
+                            syz = 0.5 * (ct[1, 2] + ct[2, 1])
+                            sxz = 0.5 * (ct[0, 2] + ct[2, 0])
+                            q.add_values(
+                                row0,
+                                {
+                                    "contact_stress_X": float(sxx),
+                                    "contact_stress_Y": float(syy),
+                                    "contact_stress_Z": float(szz),
+                                    "contact_stress_XY": float(sxy),
+                                    "contact_stress_YZ": float(syz),
+                                    "contact_stress_XZ": float(sxz),
+                                },
+                            )
+
+                # Modal outputs (mode 1..20)
                 for i in range(1, 21):
                     key = f"res_freq_{i}"
                     if key in allowed_needed:
                         q.add_float(row0, key, mapdl.parameters[f"pp_res_freq_{i}"])
+
+                    key = f"part_factor_{i}"
+                    if key in allowed_needed:
+                        q.add_values(
+                            row0,
+                            {
+                                f"{key}_X": float(mapdl.parameters[f"pp_part_factor_{i}_X"]),
+                                f"{key}_Y": float(mapdl.parameters[f"pp_part_factor_{i}_Y"]),
+                                f"{key}_Z": float(mapdl.parameters[f"pp_part_factor_{i}_Z"]),
+                            },
+                        )
+
+                    key = f"eff_modal_mass_{i}"
+                    if key in allowed_needed:
+                        q.add_values(
+                            row0,
+                            {
+                                f"{key}_X": float(mapdl.parameters[f"pp_eff_modal_mass_{i}_X"]),
+                                f"{key}_Y": float(mapdl.parameters[f"pp_eff_modal_mass_{i}_Y"]),
+                                f"{key}_Z": float(mapdl.parameters[f"pp_eff_modal_mass_{i}_Z"]),
+                            },
+                        )
 
                 q.flush(output_table)
     except Exception as e:

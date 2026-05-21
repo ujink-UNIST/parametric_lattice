@@ -116,6 +116,24 @@ def _faces_of_tet(n1: int, n2: int, n3: int, n4: int) -> tuple[tuple[int, int, i
     )
 
 
+def compute_total_volume_from_cdb(*, cdb_path: Path) -> float:
+    """Compute total solid volume by summing tetra corner volumes."""
+
+    nodes = _parse_cdb_nodes(cdb_path)
+    elems = _parse_cdb_tet_elements(cdb_path)
+
+    vol = 0.0
+    for (n1, n2, n3, n4) in elems:
+        try:
+            p1, p2, p3, p4 = (nodes[n1], nodes[n2], nodes[n3], nodes[n4])
+        except KeyError:
+            continue
+        v = abs(float(np.dot(p2 - p1, np.cross(p3 - p1, p4 - p1)))) / 6.0
+        vol += v
+
+    return float(vol)
+
+
 def compute_boundary_touch_area_from_cdb(
     *,
     cdb_path: Path,

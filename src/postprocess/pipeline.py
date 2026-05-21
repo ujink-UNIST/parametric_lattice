@@ -17,7 +17,11 @@ from postprocess.energy_command import (
     build_node_strain_energy_commands_,
 )
 from postprocess.force_command import build_boundary_force_moment_commands_
-from postprocess.modal_command import build_resonant_frequency_command_
+from postprocess.modal_command import (
+    build_modal_effective_mass_commands_,
+    build_modal_participation_commands_,
+    build_resonant_frequency_command_,
+)
 from postprocess.output_dependency import OUTPUT_DEPENDENCIES
 from postprocess.volume_command import (
     build_volume_commands_,
@@ -50,16 +54,30 @@ _HANDLERS: dict[str, PostprocessHandler] = {
     "effective_youngs_modulus": _noop,
     "effective_shear_modulus": _noop,
     "boundary_touch_area": _noop,
+    "boundary_touch_area_ratio": _noop,
+    "contact_traction": _noop,
+    "contact_stress": _noop,
     "volume_avg_stress": _noop,
     "volume_avg_energy": _noop,
     # Intermediate outputs (not written to Excel)
     "elem_sene": lambda _ctx: build_element_strain_energy_commands_(_ctx),
     "node_sene": lambda _ctx: build_node_strain_energy_commands_(_ctx),
     "node_volmass": lambda _ctx: build_node_volume_mass_commands_(_ctx),
-    "volume": lambda _ctx: build_volume_commands_(_ctx),
+    # Volume is computed in Python from mesh.cdb (more robust across analysis types).
+    "volume": _noop,
     # Modal-only (resonant frequencies)
     **{
         f"res_freq_{i}": (lambda _ctx, i=i: build_resonant_frequency_command_(_ctx, mode_index=i))
+        for i in range(1, 21)
+    },
+    # Modal-only (participation factors)
+    **{
+        f"part_factor_{i}": (lambda _ctx, i=i: build_modal_participation_commands_(_ctx, mode_index=i))
+        for i in range(1, 21)
+    },
+    # Modal-only (effective modal mass)
+    **{
+        f"eff_modal_mass_{i}": (lambda _ctx, i=i: build_modal_effective_mass_commands_(_ctx, mode_index=i))
         for i in range(1, 21)
     },
 }
