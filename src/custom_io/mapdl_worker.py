@@ -35,6 +35,7 @@ def main(argv: list[str] | None = None) -> int:
         help="MAPDL run_location for this subprocess (must be unique per process)",
     )
     p.add_argument("--jobname", default="case")
+    p.add_argument("--nproc", type=int, default=None, help="MAPDL number of processes (-np)")
     p.add_argument("--cleanup", action="store_true", default=False)
     args = p.parse_args(argv)
 
@@ -45,7 +46,12 @@ def main(argv: list[str] | None = None) -> int:
     session_dir = Path(args.session_dir)
     session_dir.mkdir(parents=True, exist_ok=True)
 
-    settings = ApdlSettings(jobname=str(args.jobname), run_location=session_dir, cleanup_on_exit=bool(args.cleanup))
+    settings = ApdlSettings(
+        jobname=str(args.jobname),
+        run_location=session_dir,
+        cleanup_on_exit=bool(args.cleanup),
+        nproc=args.nproc,
+    )
 
     commands = _read_macro(macro_path)
 

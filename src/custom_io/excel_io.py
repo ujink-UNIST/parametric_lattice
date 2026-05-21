@@ -177,6 +177,7 @@ def _apply_path_config_from_book(book: xw.Book) -> None:
       - artifacts
       - results
       - compute_policy  (cache|recompute|smart)
+      - n_proc          (optional int, MAPDL -np)
 
     Missing table/columns/cells fall back to repo defaults.
     """
@@ -229,6 +230,18 @@ def _apply_path_config_from_book(book: xw.Book) -> None:
             f"t_config.compute_policy must be one of cache/recompute/smart (got {compute_policy_raw!r})"
         )
 
+    nproc: int | None = None
+    i_np = col_index.get("n_proc")
+    if i_np is not None and i_np < len(row0):
+        v = row0[i_np]
+        if v is not None and str(v).strip():
+            try:
+                nproc = int(float(v))
+            except Exception as e:
+                raise ValueError(f"t_config.n_proc must be an int (got {v!r})") from e
+            if nproc <= 0:
+                raise ValueError(f"t_config.n_proc must be positive (got {nproc})")
+
     set_path_config(
         PathConfig(
             repo_root=cfg.repo_root,
@@ -236,6 +249,7 @@ def _apply_path_config_from_book(book: xw.Book) -> None:
             artifacts_root=artifacts_root,
             results_root=results_root,
             compute_policy=compute_policy_raw,
+            nproc=nproc,
         )
     )
 
@@ -611,6 +625,8 @@ def run_cases(
                 "--jobname",
                 jobname,
             ]
+            if getattr(cfg, "nproc", None):
+                cmd += ["--nproc", str(int(cfg.nproc))]
 
             try:
                 subprocess.run(cmd, check=True)
@@ -703,6 +719,7 @@ def run_postprocess(
             run_location=str(session_dir),
             jobname=jobname,
             cleanup_on_exit=False,
+            nproc=getattr(cfg, "nproc", None),
         ) as mapdl:
             # Run per-case postprocess APDL and queue requested results.
             for sim_case in inputs:

@@ -27,6 +27,9 @@ class PathConfig:
     #   - recompute: ignore caches and compute everything
     compute_policy: str = "smart"
 
+    # MAPDL nproc (optional). If None, let MAPDL decide default.
+    nproc: int | None = None
+
 
 def _default_repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
@@ -40,6 +43,7 @@ def default_config(repo_root: Path | None = None) -> PathConfig:
         artifacts_root=r / "artifacts",
         results_root=r / "results",
         compute_policy="smart",
+        nproc=None,
     )
 
 
