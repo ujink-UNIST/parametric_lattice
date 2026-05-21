@@ -78,6 +78,7 @@ def import_mesh_db(sim_case: SimCase) -> ApdlCommands:
         apdl_section("IMPORT MESH DB"),
         "/CLEAR",
         f"RESUME,'{_MESH_DB_BASENAME}','db','{db_dir.as_posix()}'",
+        "/PREP7",
     )
 
 

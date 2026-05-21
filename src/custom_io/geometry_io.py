@@ -87,6 +87,7 @@ def import_geometry_db(sim_case: SimCase) -> ApdlCommands:
         apdl_section("IMPORT GEOMETRY DB"),
         "/CLEAR",
         f"RESUME,'{_GEOMETRY_DB_BASENAME}','db','{db_dir.as_posix()}'",
+        "/PREP7",
     )
 
 
