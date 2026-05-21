@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import is_dataclass
 from pathlib import Path
@@ -12,6 +11,7 @@ import numpy as np
 
 from core.apdl_block import apdl_section
 from core.apdl_commands import ApdlCommands
+from core.hashing import sha1_hex
 from core.parameters.sim_case import SimCase
 
 from custom_io.path_config import get_path_config
@@ -33,7 +33,7 @@ def _get_mesh_key(sim_case: SimCase) -> str:
 
 def _get_mesh_hash(sim_case: SimCase) -> str:
     key = _get_mesh_key(sim_case)
-    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return sha1_hex(key)
 
 
 def mesh_hash(sim_case: SimCase) -> str:

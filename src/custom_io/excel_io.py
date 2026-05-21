@@ -1,6 +1,5 @@
 # excel_io.py
 
-import hashlib
 import json
 from contextlib import suppress
 from pathlib import Path
@@ -9,6 +8,8 @@ from typing import Any, Protocol, TypeVar
 import numpy as np
 import xlwings as xw  # type: ignore[import-not-found]
 from xlwings.main import Table  # type: ignore[import-not-found]
+
+from core.hashing import sha1_hex
 
 from core.parameters.element_type_params import (
     ElementTypeParams,
@@ -619,8 +620,8 @@ def run_postprocess(
     # Note: we flush after each case for more responsive Excel updates.
 
 
-def build_case_hash(key: str):
-    return hashlib.sha256(key.encode()).hexdigest()
+def build_case_hash(key: str) -> str:
+    return sha1_hex(key)
 
 
 def _ensure_table_column(
