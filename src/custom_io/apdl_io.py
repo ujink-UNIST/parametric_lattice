@@ -6,6 +6,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+from datetime import datetime
 
 from ansys.mapdl.core.launcher import launch_mapdl
 from ansys.mapdl.core.mapdl_console import MapdlConsole
@@ -72,9 +73,42 @@ def run_commands(
 
 
 def generate_apdl_script(commands: ApdlCommands) -> str:
-    return "\n".join(
-        cmd.strip() for cmd in commands if cmd.strip()
-    )
+    return "\n".join(cmd.strip() for cmd in commands if cmd.strip())
+
+
+def write_apdl_macro(
+    path: str | Path,
+    commands: ApdlCommands,
+    *,
+    title: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Write an APDL macro/input file containing the given command sequence.
+
+    Intended for reproducibility/debugging (e.g. artifacts/case/<hash>/main.mac).
+
+    Notes:
+      - We write the *flattened* command sequence exactly as we send it to MAPDL.
+      - APDL comments use '!'.
+    """
+
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+    header: list[str] = []
+    header.append("! ------------------------------")
+    header.append(f"! Generated: {datetime.now().isoformat(timespec='seconds')}")
+    if title:
+        header.append(f"! Title: {title}")
+    if metadata:
+        header.append("! Metadata:")
+        for k, v in metadata.items():
+            header.append(f"!   {k}: {v}")
+    header.append("! ------------------------------")
+    header.append("")
+
+    body = generate_apdl_script(commands)
+    p.write_text("\n".join(header) + body + "\n", encoding="utf-8")
 
 
 def _kill_process_tree(pid: int) -> None:

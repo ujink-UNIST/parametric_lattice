@@ -38,9 +38,7 @@ def build_boundary_traction_commands_(ctx: PostprocessContext) -> ApdlCommands:
     az = _face_area(ctx, "Z")
 
     cmd: list[str] = [
-        apdl_command("/POST1", "postprocess: boundary traction"),
-        apdl_command("SET,LAST", "use last substep"),
-        apdl_command("ALLSEL,ALL"),
+        apdl_command("", "postprocess: boundary traction"),
         apdl_command(
             "*DIM,pp_boundary_traction,ARRAY,3,3",
             "(rows: traction X/Y/Z, cols: face X/Y/Z)",
@@ -83,9 +81,7 @@ def build_boundary_stress_commands_(ctx: PostprocessContext) -> ApdlCommands:
     _ = ctx
 
     cmd: list[str] = [
-        apdl_command("/POST1", "postprocess: boundary stress"),
-        apdl_command("SET,LAST", "use last substep"),
-        apdl_command("ALLSEL,ALL"),
+        apdl_command("", "postprocess: boundary stress"),
         apdl_command(
             "*DIM,pp_boundary_stress,ARRAY,6",
             "[X, Y, Z, XY, YZ, XZ]",

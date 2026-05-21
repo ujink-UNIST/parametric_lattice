@@ -21,10 +21,7 @@ def build_node_volume_mass_commands_(ctx: PostprocessContext) -> ApdlCommands:
     rho = float(ctx.sim_case.post_mesh_spec.material.density)
 
     cmd: list[str] = [
-        apdl_command("/POST1", "postprocess: node vol/mass (from element VOLU)"),
-        apdl_command("SET,LAST", "use last substep"),
-        apdl_command("ALLSEL,ALL"),
-        apdl_command("ESEL,ALL"),
+        apdl_command("", "postprocess: node vol/mass (from element VOLU)"),
         apdl_command("ETABLE,pp__VOLU,VOLU", "element volume"),
         apdl_command("*GET,pp_node_vol_nmax,NODE,0,NUM,MAX", "max node id"),
         apdl_command("*DIM,pp_node_vol,ARRAY,pp_node_vol_nmax", "nodal lumped volume"),

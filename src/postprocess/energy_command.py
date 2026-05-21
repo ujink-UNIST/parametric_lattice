@@ -17,17 +17,14 @@ def build_element_strain_energy_commands_(ctx: PostprocessContext) -> ApdlComman
       - Intended as an intermediate result (not written to Excel).
       - Requires element strain energy to be available in POST1 as ETABLE item
         SENE.
-      - Uses the currently selected result SET (we follow the repo convention
-        and do SET,LAST here, like the stress/volume blocks).
+      - Assumes the common postprocess prelude has already selected the desired
+        result SET (currently SET,LAST in postprocess.pipeline).
     """
 
     _ = ctx
 
     cmd: list[str] = [
-        apdl_command("/POST1", "postprocess: element strain energy (SENE)"),
-        apdl_command("SET,LAST", "use last substep"),
-        apdl_command("ALLSEL,ALL"),
-        apdl_command("ESEL,ALL"),
+        apdl_command("", "postprocess: element strain energy (SENE)"),
         apdl_command("ETABLE,pp__SENE,SENE", "element strain energy"),
         apdl_command("*GET,pp_elem_sene_emax,ELEM,0,NUM,MAX", "max element id"),
         apdl_command("*DIM,pp_elem_sene,ARRAY,pp_elem_sene_emax", "element energy by element id"),
@@ -62,10 +59,7 @@ def build_node_strain_energy_commands_(ctx: PostprocessContext) -> ApdlCommands:
     _ = ctx
 
     cmd: list[str] = [
-        apdl_command("/POST1", "postprocess: node strain energy (from element SENE)"),
-        apdl_command("SET,LAST", "use last substep"),
-        apdl_command("ALLSEL,ALL"),
-        apdl_command("ESEL,ALL"),
+        apdl_command("", "postprocess: node strain energy (from element SENE)"),
         apdl_command("ETABLE,pp__SENE,SENE", "element strain energy"),
         apdl_command("*GET,pp_node_sene_nmax,NODE,0,NUM,MAX", "max node id"),
         apdl_command("*DIM,pp_node_sene,ARRAY,pp_node_sene_nmax", "node energy by node id"),

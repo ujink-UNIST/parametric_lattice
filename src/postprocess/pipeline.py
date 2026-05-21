@@ -81,7 +81,15 @@ def postprocess_commands(
         needed=needed,
     )
 
-    cmds: ApdlCommands = (apdl_command("", "--- postprocess begin ---"),)
+    # Common POST1 prelude (run once).
+    cmds: ApdlCommands = (
+        apdl_command("", "--- postprocess begin ---"),
+        apdl_command("/POST1", "enter post1"),
+        apdl_command("FILE,'case','rst'", "attach results"),
+        apdl_command("SET,LAST", "use last substep"),
+        apdl_command("ALLSEL,ALL", "reset selections"),
+        apdl_command("ESEL,ALL", "select all elements"),
+    )
 
     for prefix in order:
         cmds = cmds + _HANDLERS[prefix](ctx)

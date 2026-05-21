@@ -27,9 +27,7 @@ def build_boundary_force_moment_commands_(ctx: PostprocessContext) -> ApdlComman
     _ = ctx
 
     cmd: list[str] = [
-        apdl_command("/POST1", "postprocess: boundary force/moment"),
-        apdl_command("SET,LAST", "use last substep"),
-        apdl_command("ALLSEL,ALL"),
+        apdl_command("", "postprocess: boundary force/moment"),
         apdl_command(
             "*DIM,pp_boundary_force,ARRAY,3,3",
             "(rows: face X/Y/Z, cols: force X/Y/Z)",

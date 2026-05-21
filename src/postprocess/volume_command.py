@@ -19,10 +19,7 @@ def build_volume_stress_commands_(ctx: PostprocessContext) -> ApdlCommands:
     _ = ctx
 
     cmd: list[str] = [
-        apdl_command("/POST1", "postprocess: volume-weighted stress (sum S*VOLU)"),
-        apdl_command("SET,LAST", "use last substep"),
-        apdl_command("ALLSEL,ALL"),
-        apdl_command("ESEL,ALL"),
+        apdl_command("", "postprocess: volume-weighted stress (sum S*VOLU)"),
         # Per-element quantities
         apdl_command("ETABLE,pp__VOLU,VOLU", "element volume"),
         apdl_command("ETABLE,pp__SX,S,X", "stress XX"),
@@ -78,10 +75,7 @@ def build_volume_energy_commands_(ctx: PostprocessContext) -> ApdlCommands:
     _ = ctx
 
     cmd: list[str] = [
-        apdl_command("/POST1", "postprocess: total strain energy"),
-        apdl_command("SET,LAST", "use last substep"),
-        apdl_command("ALLSEL,ALL"),
-        apdl_command("ESEL,ALL"),
+        apdl_command("", "postprocess: total strain energy"),
         apdl_command("ETABLE,pp__SENE,SENE", "element strain energy"),
         apdl_command("pp_volume_energy=0", "init total strain energy"),
         apdl_command("*GET,pp__eid,ELEM,0,NUM,MIN", "first selected element"),
@@ -110,10 +104,7 @@ def build_volume_commands_(ctx: PostprocessContext) -> ApdlCommands:
     _ = ctx
 
     cmd: list[str] = [
-        apdl_command("/POST1", "postprocess: total volume"),
-        apdl_command("SET,LAST", "use last substep"),
-        apdl_command("ALLSEL,ALL"),
-        apdl_command("ESEL,ALL"),
+        apdl_command("", "postprocess: total volume"),
         apdl_command("ETABLE,pp__VOLU,VOLU", "element volume"),
         apdl_command("pp_volume=0", "init total volume"),
         apdl_command("*GET,pp__eid,ELEM,0,NUM,MIN", "first selected element"),

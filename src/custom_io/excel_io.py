@@ -25,7 +25,7 @@ from core.parameters.sim_case import (
     PreMeshSpec,
     SimCase,
 )
-from custom_io.apdl_io import mapdl_session, run_commands
+from custom_io.apdl_io import mapdl_session, run_commands, write_apdl_macro
 from custom_io.excel_read import (
     read_float,
     read_int,
@@ -377,10 +377,8 @@ def run_cases(
 
                 # Switch MAPDL working directory so all solver files are
                 # written under this case.
-                run_commands(
-                    mapdl,
-                    (f"/CWD,'{run_dir.as_posix()}'",),
-                )
+                cwd_cmds = (f"/CWD,'{run_dir.as_posix()}'",)
+                run_commands(mapdl, cwd_cmds)
 
                 pipeline = build_pipeline(
                     sim_case,
@@ -389,6 +387,17 @@ def run_cases(
 
                 # Ensure jobname is set after /CLEAR inside the pipeline.
                 pipeline = pipeline[:1] + ("/FILNAME,case",) + pipeline[1:]
+
+                # Save full solve command stream for reproducibility.
+                write_apdl_macro(
+                    case_artifacts_root / case_hash / "main.mac",
+                    cwd_cmds + pipeline,
+                    title="solve",
+                    metadata={
+                        "case_hash": case_hash,
+                        "jobname": jobname,
+                    },
+                )
 
                 try:
                     run_commands(mapdl, pipeline)
@@ -418,6 +427,7 @@ def run_postprocess(
 
     cfg = get_path_config()
     base_run_dir = cfg.results_root / "case"
+    case_artifacts_root = cfg.artifacts_root / "case"
 
     needed: dict[str, int] = {}
     component_sets: dict[str, set[str]] = {}
@@ -497,10 +507,6 @@ def run_postprocess(
                     "FINISH",
                     "/CLEAR",
                     "RESUME,'case','db'",
-                    "/POST1",
-                    "FILE,'case','rst'",
-                    "SET,LAST",
-                    "ALLSEL,ALL",
                 )
                 run_commands(mapdl, prelude)
 
@@ -508,6 +514,19 @@ def run_postprocess(
                     sim_case=sim_case,
                     needed=needed,
                 )
+
+                # Save full postprocess command stream for reproducibility.
+                write_apdl_macro(
+                    case_artifacts_root / case_hash / "post.mac",
+                    prelude + pipeline,
+                    title="postprocess",
+                    metadata={
+                        "case_hash": case_hash,
+                        "jobname": jobname,
+                        "needed": ",".join(sorted(needed.keys())),
+                    },
+                )
+
                 try:
                     run_commands(mapdl, pipeline)
                 except Exception:
