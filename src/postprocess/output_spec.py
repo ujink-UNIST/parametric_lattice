@@ -27,4 +27,41 @@ POSTPROCESS_OUTPUT_SPEC: dict[str, int] = {
     "volume_energy": 1,
     "volume_avg_energy": 1,
     "volume": 1,
+    # Modal resonant frequencies (scalar columns res_freq_1 .. res_freq_20)
+    **{f"res_freq_{i}": 1 for i in range(1, 21)},
 }
+
+# Output availability by simulation_type (from Excel t_input.simulation_type).
+# Policy:
+# - volume: available for all simulation types (modal/modal_ff + xx..xz)
+# - everything else in this postprocess module: only for xx/yy/zz/xy/yz/xz
+_SIM_TYPES_MODAL: frozenset[str] = frozenset({"modal", "modal_ff"})
+_SIM_TYPES_STATIC: frozenset[str] = frozenset({"xx", "yy", "zz", "xy", "yz", "xz"})
+_SIM_TYPES_ALL: frozenset[str] = _SIM_TYPES_MODAL | _SIM_TYPES_STATIC
+
+POSTPROCESS_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
+    # Excel-written scalars: always allowed
+    "index": _SIM_TYPES_ALL,
+    "hash": _SIM_TYPES_ALL,
+    # Volume is always available
+    "volume": _SIM_TYPES_ALL,
+    # Modal-only outputs
+    **{f"res_freq_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
+    # Everything else: only xx..xz
+    "boundary_traction": _SIM_TYPES_STATIC,
+    "boundary_force": _SIM_TYPES_STATIC,
+    "boundary_moment": _SIM_TYPES_STATIC,
+    "boundary_stress": _SIM_TYPES_STATIC,
+    "volume_stress": _SIM_TYPES_STATIC,
+    "volume_avg_stress": _SIM_TYPES_STATIC,
+    "volume_energy": _SIM_TYPES_STATIC,
+    "volume_avg_energy": _SIM_TYPES_STATIC,
+}
+
+
+def is_postprocess_output_allowed(prefix: str, simulation_type: str) -> bool:
+    allowed = POSTPROCESS_OUTPUT_ALLOWED_SIM_TYPES.get(prefix)
+    if allowed is None:
+        # Unknown prefix: let existing validation raise elsewhere.
+        return True
+    return simulation_type in allowed

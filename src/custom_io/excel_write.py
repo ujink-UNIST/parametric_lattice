@@ -105,11 +105,21 @@ def _values_Vector3x3(
     }
 
 
+class _ExcelNAType:
+    """Sentinel representing Excel #N/A error."""
+
+
+EXCEL_NA = _ExcelNAType()
+
+
 class WriteQueue:
     """Queue table writes and flush them in larger blocks.
 
     - Keyed by output table row_idx0 (0-based within data_body_range).
     - Only rows present in the queue are written during flush.
+
+    Special values:
+      - EXCEL_NA: written as an Excel #N/A error (via formula =NA()).
     """
 
     def __init__(self) -> None:
@@ -123,6 +133,9 @@ class WriteQueue:
         self.add_values(row_idx0, {str(name): int(value)})
 
     def add_float(self, row_idx0: int, name: str, value: Any) -> None:
+        if value is EXCEL_NA:
+            self.add_values(row_idx0, {str(name): EXCEL_NA})
+            return
         arr = np.asarray(value, dtype=float).reshape(-1)
         if arr.size != 1:
             raise ValueError(
@@ -199,13 +212,33 @@ class WriteQueue:
                 data2d: list[list[Any]] = []
                 for rr in range(r0, r1 + 1):
                     row = self._rows.get(rr, {})
-                    data2d.append([row.get(n) for n in names])
+                    # EXCEL_NA is patched in a later pass via formula.
+                    data2d.append([
+                        (None if row.get(n) is EXCEL_NA else row.get(n)) for n in names
+                    ])
 
                 writes.append((rng, data2d))
 
         # 2) Then write to Excel after leaving the nested loop.
         for rng, data2d in writes:
             self._write_range_with_retry(rng, data2d)
+
+        # 3) Patch in Excel error values (#N/A) via formulas.
+        # We do this as a separate pass because Range.value cannot reliably
+        # create true error cells (it would become the text "#N/A").
+        for r, row in self._rows.items():
+            for c, v in row.items():
+                if v is not EXCEL_NA:
+                    continue
+                try:
+                    idx0 = col_indices0.get(c)
+                    if idx0 is None:
+                        continue
+                    body[r, idx0].formula = "=NA()"
+                except Exception:
+                    # Best-effort: if Excel is busy or formula assignment fails,
+                    # leave whatever was written in the main pass.
+                    pass
 
         self._rows.clear()
 

@@ -42,7 +42,10 @@ from custom_io.path_config import (
     set_path_config,
 )
 from pipeline import build_pipeline
-from postprocess.output_spec import POSTPROCESS_OUTPUT_SPEC
+from postprocess.output_spec import (
+    POSTPROCESS_OUTPUT_SPEC,
+    is_postprocess_output_allowed,
+)
 from postprocess.pipeline import postprocess_commands
 
 _INPUT_TABLE = "t_input"
@@ -497,6 +500,66 @@ def run_postprocess(
                 status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
                 _set_status_running(book, status_cell)
 
+                # Validate postprocess outputs against this case's simulation_type.
+                # If an output is not supported, we write #N/A for those columns
+                # (instead of raising), and skip MAPDL postprocess for this case.
+                sim_type = sim_case.post_mesh_spec.setup.sim_type
+                disallowed = [
+                    p for p in needed.keys() if not is_postprocess_output_allowed(p, sim_type)
+                ]
+                if disallowed:
+                    from custom_io.excel_write import EXCEL_NA
+
+                    row0 = int(sim_case.row_idx)
+
+                    # Always write required scalars.
+                    if "index" in needed:
+                        q.add_int(row0, "index", row0 + 1)
+                    if "hash" in needed:
+                        case_key = sim_case.to_string()
+                        case_hash = build_case_hash(case_key)
+                        q.add_str(row0, "hash", case_hash)
+
+                    # Write #N/A for unsupported outputs.
+                    for p in disallowed:
+                        ncomp = needed.get(p, 1)
+                        if ncomp == 1:
+                            q.add_float(row0, p, EXCEL_NA)
+                        elif ncomp == 6:
+                            q.add_values(
+                                row0,
+                                {
+                                    f"{p}_X": EXCEL_NA,
+                                    f"{p}_Y": EXCEL_NA,
+                                    f"{p}_Z": EXCEL_NA,
+                                    f"{p}_XY": EXCEL_NA,
+                                    f"{p}_YZ": EXCEL_NA,
+                                    f"{p}_XZ": EXCEL_NA,
+                                },
+                            )
+                        elif ncomp == 9:
+                            q.add_values(
+                                row0,
+                                {
+                                    f"{p}_XX": EXCEL_NA,
+                                    f"{p}_XY": EXCEL_NA,
+                                    f"{p}_XZ": EXCEL_NA,
+                                    f"{p}_YX": EXCEL_NA,
+                                    f"{p}_YY": EXCEL_NA,
+                                    f"{p}_YZ": EXCEL_NA,
+                                    f"{p}_ZX": EXCEL_NA,
+                                    f"{p}_ZY": EXCEL_NA,
+                                    f"{p}_ZZ": EXCEL_NA,
+                                },
+                            )
+                        else:
+                            # For any future component counts, fall back to scalar #N/A.
+                            q.add_float(row0, p, EXCEL_NA)
+
+                    q.flush(output_table)
+                    _set_status_done(book, status_cell)
+                    continue
+
                 case_key = sim_case.to_string()
                 case_hash = build_case_hash(case_key)
                 run_dir = base_run_dir / f"{case_hash}"
@@ -611,6 +674,12 @@ def run_postprocess(
                         q.add_float(row0, "volume_avg_energy", float("nan"))
                     else:
                         q.add_float(row0, "volume_avg_energy", ve / vol)
+
+                # Modal resonant frequencies (mode 1..20)
+                for i in range(1, 21):
+                    key = f"res_freq_{i}"
+                    if key in needed:
+                        q.add_float(row0, key, mapdl.parameters[f"pp_res_freq_{i}"])
 
                 q.flush(output_table)
     except Exception as e:

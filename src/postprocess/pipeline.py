@@ -17,6 +17,7 @@ from postprocess.energy_command import (
     build_node_strain_energy_commands_,
 )
 from postprocess.force_command import build_boundary_force_moment_commands_
+from postprocess.modal_command import build_resonant_frequency_command_
 from postprocess.output_dependency import OUTPUT_DEPENDENCIES
 from postprocess.volume_command import (
     build_volume_commands_,
@@ -51,6 +52,11 @@ _HANDLERS: dict[str, PostprocessHandler] = {
     "node_sene": lambda _ctx: build_node_strain_energy_commands_(_ctx),
     "node_volmass": lambda _ctx: build_node_volume_mass_commands_(_ctx),
     "volume": lambda _ctx: build_volume_commands_(_ctx),
+    # Modal-only (resonant frequencies)
+    **{
+        f"res_freq_{i}": (lambda _ctx, i=i: build_resonant_frequency_command_(_ctx, mode_index=i))
+        for i in range(1, 21)
+    },
 }
 
 
