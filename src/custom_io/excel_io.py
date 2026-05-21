@@ -411,12 +411,16 @@ def run_cases(
     base_run_dir = cfg.results_root / "case"
     case_artifacts_root = cfg.artifacts_root / "case"
 
-    # Keep a single MAPDL session open and switch working directory per case.
-    session_dir = base_run_dir / "__mapdl_session"
-    session_dir.mkdir(parents=True, exist_ok=True)
+    # Run MAPDL via a separate Python subprocess per case.
+    # Excel/COM updates remain in this parent process.
+    session_root = base_run_dir / "__mapdl_session"
+    session_root.mkdir(parents=True, exist_ok=True)
 
     # Use a stable, non-hash jobname so result filenames don't include the case hash.
     jobname = "case"
+
+    import subprocess
+    import sys
 
     try:
         # Mark all selected rows as pending up-front.
@@ -426,196 +430,193 @@ def run_cases(
                 _status_range_for_input_row(book, int(sim_case.row_idx)),
             )
 
-        with mapdl_session(
-            run_location=str(session_dir),
-            jobname=jobname,
-            cleanup_on_exit=False,
-        ) as mapdl:
-            for sim_case in inputs:
-                status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
-                _set_status_running(book, status_cell)
+        for sim_case in inputs:
+            status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
+            _set_status_running(book, status_cell)
 
-                case_key = sim_case.to_string()
-                case_hash = build_case_hash(case_key)
+            case_key = sim_case.to_string()
+            case_hash = build_case_hash(case_key)
 
-                run_dir = base_run_dir / f"{case_hash}"
-                run_dir.mkdir(parents=True, exist_ok=True)
+            run_dir = base_run_dir / f"{case_hash}"
+            run_dir.mkdir(parents=True, exist_ok=True)
 
-                # Save sim_case metadata alongside results for reproducibility.
-                sim_case_path = case_artifacts_root / case_hash / "sim_case.json"
-                sim_case_path.parent.mkdir(parents=True, exist_ok=True)
-                sim_case_path.write_text(
-                    json.dumps(
-                        {
-                            "case_key": case_key,
-                            "case_hash": case_hash,
-                            "sim_case": sim_case,
-                        },
-                        ensure_ascii=False,
-                        indent=2,
-                        default=lambda o: (
-                            o.tolist() if hasattr(o, "tolist") else vars(o)
-                        ),
-                    ),
-                    encoding="utf-8",
-                )
-
-                print(sim_case.to_string())
-
-                # If smart/cache and this case is already solved, skip.
-                case_meta_path = case_artifacts_root / case_hash / "sim_case.json"
-                compute_policy = str(getattr(cfg, "compute_policy", "smart")).lower()
-
-                if compute_policy in {"smart", "cache"} and _is_case_solved(
-                    run_dir=run_dir,
-                    case_meta_path=case_meta_path,
-                    case_key=case_key,
-                    case_hash=case_hash,
-                ):
-                    _set_status_skip(book, status_cell)
-                    continue
-
-                # Decide whether to reuse geometry/mesh caches.
-                from custom_io.geometry_io import (
-                    geometry_db_dir,
-                    geometry_hash,
-                    geometry_key,
-                    import_geometry_db,
-                )
-                from custom_io.mesh_io import (
-                    export_mesh_cdb,
-                    export_mesh_db,
-                    import_mesh_db,
-                    mesh_db_dir,
-                    mesh_hash,
-                    mesh_key,
-                )
-                from material.pipeline import material_commands
-                from setup.pipeline import setup_commands
-                from solve.pipeline import solver_commands
-                from meshing.pipeline import meshing_commands
-
-                mesh_dir = mesh_db_dir(sim_case)
-                mesh_meta = mesh_dir / "sim_case.json"
-                mesh_db = mesh_dir / "mesh.db"
-                mesh_ok = mesh_db.exists() and _meta_matches(
-                    mesh_meta,
-                    key_field="mesh_key",
-                    hash_field="mesh_hash",
-                    key=mesh_key(sim_case),
-                    h=mesh_hash(sim_case),
-                )
-
-                geom_dir = geometry_db_dir(sim_case)
-                geom_meta = geom_dir / "sim_case.json"
-                geom_db = geom_dir / "geometry.db"
-                geom_ok = geom_db.exists() and _meta_matches(
-                    geom_meta,
-                    key_field="geometry_key",
-                    hash_field="geometry_hash",
-                    key=geometry_key(sim_case),
-                    h=geometry_hash(sim_case),
-                )
-
-                # cache policy: if no reusable caches, skip.
-                if compute_policy == "cache" and not (mesh_ok or geom_ok):
-                    _set_status_skip(book, status_cell)
-                    continue
-
-                # Switch MAPDL working directory so all solver files are
-                # written under this case.
-                cwd_cmds = (f"/CWD,'{run_dir.as_posix()}'",)
-                run_commands(mapdl, cwd_cmds)
-
-                # Build the solve pipeline depending on cache availability.
-                if compute_policy in {"smart", "cache"} and mesh_ok:
-                    # Fast path: import mesh DB, then apply material/setup/solve.
-                    # We still compute unit_cell in Python for setup naming.
-                    from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
-                    from custom_io.lgf_io import import_lgf
-
-                    lattice = lgf_to_lattice(
-                        import_lgf(sim_case.pre_mesh_spec.geometry.cell_name)
-                    )
-                    unit_cell = lattice_to_unit_cell(lattice)
-
-                    pipeline = (
-                        ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
-                        + import_mesh_db(sim_case)
-                        + ("/FILNAME,case",)
-                        + material_commands(sim_case.post_mesh_spec.material)
-                        + setup_commands(
-                            unit_cell,
-                            sim_case.pre_mesh_spec.profile,
-                            sim_case.pre_mesh_spec.geometry,
-                            sim_case.post_mesh_spec.setup,
-                        )
-                        + solver_commands(sim_case.post_mesh_spec.setup)
-                        + ("SAVE,'case','db'",)
-                    )
-                elif compute_policy in {"smart", "cache"} and geom_ok:
-                    # Mid path: import geometry DB, then mesh + material/setup/solve.
-                    from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
-                    from custom_io.lgf_io import import_lgf
-
-                    lattice = lgf_to_lattice(
-                        import_lgf(sim_case.pre_mesh_spec.geometry.cell_name)
-                    )
-                    unit_cell = lattice_to_unit_cell(lattice)
-
-                    pipeline = (
-                        ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
-                        + import_geometry_db(sim_case)
-                        + ("/FILNAME,case",)
-                        + meshing_commands(
-                            unit_cell,
-                            sim_case.pre_mesh_spec.geometry,
-                            sim_case.pre_mesh_spec.profile,
-                            sim_case.pre_mesh_spec.meshing,
-                        )
-                        + (
-                            (export_mesh_db(sim_case) + export_mesh_cdb(sim_case))
-                            if save_intermediate
-                            else ()
-                        )
-                        + material_commands(sim_case.post_mesh_spec.material)
-                        + setup_commands(
-                            unit_cell,
-                            sim_case.pre_mesh_spec.profile,
-                            sim_case.pre_mesh_spec.geometry,
-                            sim_case.post_mesh_spec.setup,
-                        )
-                        + solver_commands(sim_case.post_mesh_spec.setup)
-                        + ("SAVE,'case','db'",)
-                    )
-                else:
-                    # Full recompute.
-                    pipeline = build_pipeline(
-                        sim_case,
-                        save_intermediate=save_intermediate,
-                    )
-
-                # Ensure jobname is set after /CLEAR inside the pipeline.
-                pipeline = pipeline[:1] + ("/FILNAME,case",) + pipeline[1:]
-
-                # Save full solve command stream for reproducibility.
-                write_apdl_macro(
-                    case_artifacts_root / case_hash / "main.mac",
-                    cwd_cmds + pipeline,
-                    title="solve",
-                    metadata={
+            # Save sim_case metadata alongside results for reproducibility.
+            sim_case_path = case_artifacts_root / case_hash / "sim_case.json"
+            sim_case_path.parent.mkdir(parents=True, exist_ok=True)
+            sim_case_path.write_text(
+                json.dumps(
+                    {
+                        "case_key": case_key,
                         "case_hash": case_hash,
-                        "jobname": jobname,
+                        "sim_case": sim_case,
                     },
+                    ensure_ascii=False,
+                    indent=2,
+                    default=lambda o: (
+                        o.tolist() if hasattr(o, "tolist") else vars(o)
+                    ),
+                ),
+                encoding="utf-8",
+            )
+
+            print(sim_case.to_string())
+
+            # If smart/cache and this case is already solved, skip.
+            case_meta_path = case_artifacts_root / case_hash / "sim_case.json"
+            compute_policy = str(getattr(cfg, "compute_policy", "smart")).lower()
+
+            if compute_policy in {"smart", "cache"} and _is_case_solved(
+                run_dir=run_dir,
+                case_meta_path=case_meta_path,
+                case_key=case_key,
+                case_hash=case_hash,
+            ):
+                _set_status_skip(book, status_cell)
+                continue
+
+            # Decide whether to reuse geometry/mesh caches.
+            from custom_io.geometry_io import (
+                geometry_db_dir,
+                geometry_hash,
+                geometry_key,
+                import_geometry_db,
+            )
+            from custom_io.mesh_io import (
+                export_mesh_cdb,
+                export_mesh_db,
+                import_mesh_db,
+                mesh_db_dir,
+                mesh_hash,
+                mesh_key,
+            )
+            from material.pipeline import material_commands
+            from setup.pipeline import setup_commands
+            from solve.pipeline import solver_commands
+            from meshing.pipeline import meshing_commands
+
+            mesh_dir = mesh_db_dir(sim_case)
+            mesh_meta = mesh_dir / "sim_case.json"
+            mesh_db = mesh_dir / "mesh.db"
+            mesh_ok = mesh_db.exists() and _meta_matches(
+                mesh_meta,
+                key_field="mesh_key",
+                hash_field="mesh_hash",
+                key=mesh_key(sim_case),
+                h=mesh_hash(sim_case),
+            )
+
+            geom_dir = geometry_db_dir(sim_case)
+            geom_meta = geom_dir / "sim_case.json"
+            geom_db = geom_dir / "geometry.db"
+            geom_ok = geom_db.exists() and _meta_matches(
+                geom_meta,
+                key_field="geometry_key",
+                hash_field="geometry_hash",
+                key=geometry_key(sim_case),
+                h=geometry_hash(sim_case),
+            )
+
+            # cache policy: if no reusable caches, skip.
+            if compute_policy == "cache" and not (mesh_ok or geom_ok):
+                _set_status_skip(book, status_cell)
+                continue
+
+            # Build the solve pipeline depending on cache availability.
+            if compute_policy in {"smart", "cache"} and mesh_ok:
+                # Fast path: import mesh DB, then apply material/setup/solve.
+                # We still compute unit_cell in Python for setup naming.
+                from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
+                from custom_io.lgf_io import import_lgf
+
+                lattice = lgf_to_lattice(import_lgf(sim_case.pre_mesh_spec.geometry.cell_name))
+                unit_cell = lattice_to_unit_cell(lattice)
+
+                pipeline = (
+                    ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
+                    + import_mesh_db(sim_case)
+                    + ("/FILNAME,case",)
+                    + material_commands(sim_case.post_mesh_spec.material)
+                    + setup_commands(
+                        unit_cell,
+                        sim_case.pre_mesh_spec.profile,
+                        sim_case.pre_mesh_spec.geometry,
+                        sim_case.post_mesh_spec.setup,
+                    )
+                    + solver_commands(sim_case.post_mesh_spec.setup)
+                    + ("SAVE,'case','db'",)
                 )
+            elif compute_policy in {"smart", "cache"} and geom_ok:
+                # Mid path: import geometry DB, then mesh + material/setup/solve.
+                from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
+                from custom_io.lgf_io import import_lgf
 
-                try:
-                    run_commands(mapdl, pipeline)
-                except Exception:
-                    _set_status_fail(book, status_cell)
-                    raise
+                lattice = lgf_to_lattice(import_lgf(sim_case.pre_mesh_spec.geometry.cell_name))
+                unit_cell = lattice_to_unit_cell(lattice)
 
-                _set_status_done(book, status_cell)
+                pipeline = (
+                    ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
+                    + import_geometry_db(sim_case)
+                    + ("/FILNAME,case",)
+                    + meshing_commands(
+                        unit_cell,
+                        sim_case.pre_mesh_spec.geometry,
+                        sim_case.pre_mesh_spec.profile,
+                        sim_case.pre_mesh_spec.meshing,
+                    )
+                    + ((export_mesh_db(sim_case) + export_mesh_cdb(sim_case)) if save_intermediate else ())
+                    + material_commands(sim_case.post_mesh_spec.material)
+                    + setup_commands(
+                        unit_cell,
+                        sim_case.pre_mesh_spec.profile,
+                        sim_case.pre_mesh_spec.geometry,
+                        sim_case.post_mesh_spec.setup,
+                    )
+                    + solver_commands(sim_case.post_mesh_spec.setup)
+                    + ("SAVE,'case','db'",)
+                )
+            else:
+                pipeline = build_pipeline(sim_case, save_intermediate=save_intermediate)
+
+            # Ensure jobname is set after /CLEAR inside the pipeline.
+            pipeline = pipeline[:1] + ("/FILNAME,case",) + pipeline[1:]
+
+            cwd_cmds = (f"/CWD,'{run_dir.as_posix()}'",)
+
+            # Save full solve command stream for reproducibility.
+            macro_path = case_artifacts_root / case_hash / "main.mac"
+            write_apdl_macro(
+                macro_path,
+                cwd_cmds + pipeline,
+                title="solve",
+                metadata={
+                    "case_hash": case_hash,
+                    "jobname": jobname,
+                },
+            )
+
+            # Unique session dir per subprocess to avoid collisions.
+            session_dir = session_root / case_hash
+            session_dir.mkdir(parents=True, exist_ok=True)
+
+            cmd = [
+                sys.executable,
+                "-m",
+                "custom_io.mapdl_worker",
+                "--macro",
+                str(macro_path),
+                "--session-dir",
+                str(session_dir),
+                "--jobname",
+                jobname,
+            ]
+
+            try:
+                subprocess.run(cmd, check=True)
+            except Exception:
+                _set_status_fail(book, status_cell)
+                raise
+
+            _set_status_done(book, status_cell)
     except Exception as e:
         print(f"Error: {e}")
         raise
