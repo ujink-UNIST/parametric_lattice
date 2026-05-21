@@ -9,7 +9,7 @@ class MeshingParams:
     max_element_size: float
 
     def to_string(self) -> str:
-        return f"MaxElementSize:{self.max_element_size:.6f}"
+        return f"MaxElementSize:{self.max_element_size:.16e}"
 
 
 def build_meshing_params(

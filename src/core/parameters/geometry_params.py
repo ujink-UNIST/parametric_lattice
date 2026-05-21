@@ -19,7 +19,7 @@ class GeometryParams:
         sx, sy, sz = (float(self.size[0]), float(self.size[1]), float(self.size[2]))
         return (
             f"Cell:{self.cell_name}"
-            f"__Size:{sx:.6f},{sy:.6f},{sz:.6f}"
+            f"__Size:{sx:.16e},{sy:.16e},{sz:.16e}"
         )
 
 

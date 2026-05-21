@@ -12,9 +12,9 @@ class MaterialParams:
 
     def to_string(self) -> str:
         return (
-            f"E:{self.e_mod:.6f}"
-            f"__Nu:{self.nu:.6f}"
-            f"__Density:{self.density:.6f}"
+            f"E:{self.e_mod:.16e}"
+            f"__Nu:{self.nu:.16e}"
+            f"__Density:{self.density:.16e}"
         )
 
 

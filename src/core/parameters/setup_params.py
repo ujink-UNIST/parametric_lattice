@@ -13,7 +13,7 @@ class SetupParams:
     def to_string(self) -> str:
         return (
             f"SimType:{self.sim_type}"
-            f"__Strain:{self.strain:.6f}"
+            f"__Strain:{self.strain:.16e}"
             f"__Substeps:{self.n_substeps}"
         )
 

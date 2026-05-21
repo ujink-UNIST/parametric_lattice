@@ -10,7 +10,7 @@ class SolidProfileParams:
     radius: float
 
     def to_string(self) -> str:
-        return f"Radius:{self.radius:.6f}"
+        return f"Radius:{self.radius:.16e}"
 
 
 @dataclass(frozen=True)
@@ -27,11 +27,11 @@ class BeamProfileParams:
 
     def to_string(self) -> str:
         return (
-            f"Radius:{self.radius:.6f}__Kappa:{self.kappa:.6f}"
-            f"__JArea:{self.joint_area_factor:.6f}"
-            f"__JLength:{self.joint_length_factor:.6f}"
-            f"__JBend:{self.joint_bending_factor:.6f}"
-            f"__JTors:{self.joint_torsion_factor:.6f}"
+            f"Radius:{self.radius:.16e}__Kappa:{self.kappa:.16e}"
+            f"__JArea:{self.joint_area_factor:.16e}"
+            f"__JLength:{self.joint_length_factor:.16e}"
+            f"__JBend:{self.joint_bending_factor:.16e}"
+            f"__JTors:{self.joint_torsion_factor:.16e}"
         )
 
 
