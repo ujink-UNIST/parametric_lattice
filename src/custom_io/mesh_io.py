@@ -36,6 +36,12 @@ def _get_mesh_hash(sim_case: SimCase) -> str:
     return sha1_hex(key)
 
 
+def mesh_key(sim_case: SimCase) -> str:
+    """Public wrapper for the stable mesh key."""
+
+    return _get_mesh_key(sim_case)
+
+
 def mesh_hash(sim_case: SimCase) -> str:
     """Public wrapper for the stable mesh hash."""
 
@@ -45,6 +51,12 @@ def mesh_hash(sim_case: SimCase) -> str:
 def _mesh_db_dir(sim_case: SimCase) -> Path:
     artifacts_root = get_path_config().artifacts_root
     return artifacts_root / _MESH_DB_ROOT / _get_mesh_hash(sim_case)
+
+
+def mesh_db_dir(sim_case: SimCase) -> Path:
+    """Public path to the mesh cache directory for this case."""
+
+    return _mesh_db_dir(sim_case)
 
 
 def _mesh_db_path(sim_case: SimCase) -> Path:

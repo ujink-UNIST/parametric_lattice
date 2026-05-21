@@ -59,12 +59,14 @@ _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇"
 _PENDING_MARK = "…"
 _DONE_MARK = "✓"
 _FAIL_MARK = "✗"
+_SKIP_MARK = "»"
 
 # Status cell styling (RGB)
 _PENDING_COLOR = (235, 235, 235)  # light gray
 _RUNNING_COLOR = (255, 242, 204)  # light yellow
 _DONE_COLOR = (198, 239, 206)  # light green
 _FAIL_COLOR = (255, 199, 206)  # light red
+_SKIP_COLOR = (221, 235, 247)  # light blue
 
 
 def _doevents(book: xw.Book) -> None:
@@ -119,6 +121,14 @@ def _set_status_fail(book: xw.Book, cell: xw.Range | None) -> None:
     _doevents(book)
 
 
+def _set_status_skip(book: xw.Book, cell: xw.Range | None) -> None:
+    if cell is None:
+        return
+    cell.value = _SKIP_MARK
+    _style_status_cell(cell, fill_rgb=_SKIP_COLOR)
+    _doevents(book)
+
+
 class DataclassType(Protocol):
     __dataclass_fields__: dict[str, Any]
 
@@ -144,6 +154,7 @@ def _apply_path_config_from_book(book: xw.Book) -> None:
       - lgf
       - artifacts
       - results
+      - compute_policy  (cache|recompute|smart)
 
     Missing table/columns/cells fall back to repo defaults.
     """
@@ -184,12 +195,25 @@ def _apply_path_config_from_book(book: xw.Book) -> None:
     artifacts_root = read_abs("artifacts") or cfg.artifacts_root
     results_root = read_abs("results") or cfg.results_root
 
+    compute_policy_raw = "smart"
+    i_pol = col_index.get("compute_policy")
+    if i_pol is not None and i_pol < len(row0):
+        v = row0[i_pol]
+        if v is not None and str(v).strip():
+            compute_policy_raw = str(v).strip().lower()
+
+    if compute_policy_raw not in {"cache", "recompute", "smart"}:
+        raise ValueError(
+            f"t_config.compute_policy must be one of cache/recompute/smart (got {compute_policy_raw!r})"
+        )
+
     set_path_config(
         PathConfig(
             repo_root=cfg.repo_root,
             lgf_root=lgf_root,
             artifacts_root=artifacts_root,
             results_root=results_root,
+            compute_policy=compute_policy_raw,
         )
     )
 
@@ -319,6 +343,41 @@ def selected_input_indices(
     return tuple(sorted(idxs)) if idxs else None
 
 
+def _read_json(path: Path) -> dict[str, Any] | None:
+    with suppress(Exception):
+        return json.loads(path.read_text(encoding="utf-8"))
+    return None
+
+
+def _meta_matches(path: Path, *, key_field: str, hash_field: str, key: str, h: str) -> bool:
+    meta = _read_json(path)
+    if not isinstance(meta, dict):
+        return False
+    return str(meta.get(key_field, "")) == key and str(meta.get(hash_field, "")) == h
+
+
+def _is_case_solved(
+    *,
+    run_dir: Path,
+    case_meta_path: Path,
+    case_key: str,
+    case_hash: str,
+) -> bool:
+    if not (run_dir / "case.db").exists():
+        return False
+    if not (run_dir / "case.rst").exists():
+        return False
+    if not case_meta_path.exists():
+        return False
+    return _meta_matches(
+        case_meta_path,
+        key_field="case_key",
+        hash_field="case_hash",
+        key=case_key,
+        h=case_hash,
+    )
+
+
 def run_cases(
     book: xw.Book,
     inputs: tuple[SimCase, ...],
@@ -379,15 +438,128 @@ def run_cases(
 
                 print(sim_case.to_string())
 
+                # If smart/cache and this case is already solved, skip.
+                case_meta_path = case_artifacts_root / case_hash / "sim_case.json"
+                compute_policy = str(getattr(cfg, "compute_policy", "smart")).lower()
+
+                if compute_policy in {"smart", "cache"} and _is_case_solved(
+                    run_dir=run_dir,
+                    case_meta_path=case_meta_path,
+                    case_key=case_key,
+                    case_hash=case_hash,
+                ):
+                    _set_status_skip(book, status_cell)
+                    continue
+
+                # Decide whether to reuse geometry/mesh caches.
+                from custom_io.geometry_io import (
+                    geometry_db_dir,
+                    geometry_hash,
+                    geometry_key,
+                    import_geometry_db,
+                )
+                from custom_io.mesh_io import (
+                    export_mesh_cdb,
+                    export_mesh_db,
+                    import_mesh_db,
+                    mesh_db_dir,
+                    mesh_hash,
+                    mesh_key,
+                )
+                from material.pipeline import material_commands
+                from setup.pipeline import setup_commands
+                from solve.pipeline import solver_commands
+                from meshing.pipeline import meshing_commands
+
+                mesh_dir = mesh_db_dir(sim_case)
+                mesh_meta = mesh_dir / "sim_case.json"
+                mesh_db = mesh_dir / "mesh.db"
+                mesh_ok = mesh_db.exists() and _meta_matches(
+                    mesh_meta,
+                    key_field="mesh_key",
+                    hash_field="mesh_hash",
+                    key=mesh_key(sim_case),
+                    h=mesh_hash(sim_case),
+                )
+
+                geom_dir = geometry_db_dir(sim_case)
+                geom_meta = geom_dir / "sim_case.json"
+                geom_db = geom_dir / "geometry.db"
+                geom_ok = geom_db.exists() and _meta_matches(
+                    geom_meta,
+                    key_field="geometry_key",
+                    hash_field="geometry_hash",
+                    key=geometry_key(sim_case),
+                    h=geometry_hash(sim_case),
+                )
+
+                # cache policy: if no reusable caches, skip.
+                if compute_policy == "cache" and not (mesh_ok or geom_ok):
+                    _set_status_skip(book, status_cell)
+                    continue
+
                 # Switch MAPDL working directory so all solver files are
                 # written under this case.
                 cwd_cmds = (f"/CWD,'{run_dir.as_posix()}'",)
                 run_commands(mapdl, cwd_cmds)
 
-                pipeline = build_pipeline(
-                    sim_case,
-                    save_intermediate=save_intermediate,
-                )
+                # Build the solve pipeline depending on cache availability.
+                if compute_policy in {"smart", "cache"} and mesh_ok:
+                    # Fast path: import mesh DB, then apply material/setup/solve.
+                    # We still compute unit_cell in Python for setup naming.
+                    from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
+                    from custom_io.lgf_io import import_lgf
+
+                    lattice = lgf_to_lattice(import_lgf(sim_case.pre_mesh_spec.geometry.cell_name))
+                    unit_cell = lattice_to_unit_cell(lattice)
+
+                    pipeline = (
+                        ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
+                        + import_mesh_db(sim_case)
+                        + material_commands(sim_case.post_mesh_spec.material)
+                        + setup_commands(
+                            unit_cell,
+                            sim_case.pre_mesh_spec.profile,
+                            sim_case.pre_mesh_spec.geometry,
+                            sim_case.post_mesh_spec.setup,
+                        )
+                        + solver_commands(sim_case.post_mesh_spec.setup)
+                        + ("SAVE,'case','db'",)
+                    )
+                elif compute_policy in {"smart", "cache"} and geom_ok:
+                    # Mid path: import geometry DB, then mesh + material/setup/solve.
+                    from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
+                    from custom_io.lgf_io import import_lgf
+
+                    lattice = lgf_to_lattice(import_lgf(sim_case.pre_mesh_spec.geometry.cell_name))
+                    unit_cell = lattice_to_unit_cell(lattice)
+
+                    pipeline = (
+                        ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
+                        + import_geometry_db(sim_case)
+                        + meshing_commands(
+                            unit_cell,
+                            sim_case.pre_mesh_spec.geometry,
+                            sim_case.pre_mesh_spec.profile,
+                            sim_case.pre_mesh_spec.meshing,
+                        )
+                        + ((export_mesh_db(sim_case) + export_mesh_cdb(sim_case)) if save_intermediate else ())
+                        + material_commands(sim_case.post_mesh_spec.material)
+                        + setup_commands(
+                            unit_cell,
+                            sim_case.pre_mesh_spec.profile,
+                            sim_case.pre_mesh_spec.geometry,
+                            sim_case.post_mesh_spec.setup,
+                        )
+                        + solver_commands(sim_case.post_mesh_spec.setup)
+                        + ("SAVE,'case','db'",)
+                    )
+                else:
+                    # Full recompute.
+                    pipeline = build_pipeline(
+                        sim_case,
+                        save_intermediate=save_intermediate,
+                    )
 
                 # Ensure jobname is set after /CLEAR inside the pipeline.
                 pipeline = pipeline[:1] + ("/FILNAME,case",) + pipeline[1:]

@@ -43,6 +43,12 @@ def _get_geometry_hash(sim_case: SimCase) -> str:
     return sha1_hex(key)
 
 
+def geometry_key(sim_case: SimCase) -> str:
+    """Public wrapper for the stable geometry key."""
+
+    return _get_geometry_key(sim_case)
+
+
 def geometry_hash(sim_case: SimCase) -> str:
     """Public wrapper for the stable geometry hash."""
 
@@ -52,6 +58,12 @@ def geometry_hash(sim_case: SimCase) -> str:
 def _geometry_db_dir(sim_case: SimCase) -> Path:
     artifacts_root = get_path_config().artifacts_root
     return artifacts_root / _GEOMETRY_DB_ROOT / _get_geometry_hash(sim_case)
+
+
+def geometry_db_dir(sim_case: SimCase) -> Path:
+    """Public path to the geometry cache directory for this case."""
+
+    return _geometry_db_dir(sim_case)
 
 
 def _geometry_db_path(sim_case: SimCase) -> Path:

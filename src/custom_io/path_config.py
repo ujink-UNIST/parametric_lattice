@@ -6,7 +6,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class PathConfig:
-    """Runtime-configurable project paths.
+    """Runtime-configurable project paths and compute policy.
 
     Defaults are derived from the repository root (two levels above this file).
 
@@ -21,6 +21,12 @@ class PathConfig:
     artifacts_root: Path
     results_root: Path
 
+    # Solve compute policy (used by excel integration):
+    #   - smart: reuse caches when valid; otherwise compute; skip if already solved
+    #   - cache: reuse caches when valid; otherwise skip
+    #   - recompute: ignore caches and compute everything
+    compute_policy: str = "smart"
+
 
 def _default_repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
@@ -33,6 +39,7 @@ def default_config(repo_root: Path | None = None) -> PathConfig:
         lgf_root=r / "lgf",
         artifacts_root=r / "artifacts",
         results_root=r / "results",
+        compute_policy="smart",
     )
 
 
