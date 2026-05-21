@@ -63,8 +63,7 @@ _HANDLERS: dict[str, PostprocessHandler] = {
     "elem_sene": lambda _ctx: build_element_strain_energy_commands_(_ctx),
     "node_sene": lambda _ctx: build_node_strain_energy_commands_(_ctx),
     "node_volmass": lambda _ctx: build_node_volume_mass_commands_(_ctx),
-    # Volume is computed in Python from mesh.cdb (more robust across analysis types).
-    "volume": _noop,
+    "volume": lambda _ctx: build_volume_commands_(_ctx),
     # Modal-only (resonant frequencies)
     **{
         f"res_freq_{i}": (lambda _ctx, i=i: build_resonant_frequency_command_(_ctx, mode_index=i))
