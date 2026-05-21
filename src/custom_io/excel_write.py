@@ -65,15 +65,15 @@ def _values_Vector6(
             f"{prefix}: expected Vector6 with 6 elements, got shape {np.shape(value)!r}"
         )
 
-    xx, yy, zz, yz, xz, xy = (float(v) for v in arr)
-    # Convention: [XX, YY, ZZ, YZ, XZ, XY]
+    xx, yy, zz, xy, yz, xz = (float(v) for v in arr)
+    # Convention (APDL Vector6): [X, Y, Z, XY, YZ, XZ]
     return {
-        f"{prefix}_XX": xx,
-        f"{prefix}_YY": yy,
-        f"{prefix}_ZZ": zz,
+        f"{prefix}_X": xx,
+        f"{prefix}_Y": yy,
+        f"{prefix}_Z": zz,
+        f"{prefix}_XY": xy,
         f"{prefix}_YZ": yz,
         f"{prefix}_XZ": xz,
-        f"{prefix}_XY": xy,
     }
 
 

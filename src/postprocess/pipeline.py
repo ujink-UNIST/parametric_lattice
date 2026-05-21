@@ -12,7 +12,10 @@ from postprocess.boundary_command import (
 )
 from postprocess.context import PostprocessContext
 from postprocess.dependency_resolver import expand_prefixes, topo_sort
-from postprocess.energy_command import build_node_strain_energy_commands_
+from postprocess.energy_command import (
+    build_element_strain_energy_commands_,
+    build_node_strain_energy_commands_,
+)
 from postprocess.force_command import build_boundary_force_moment_commands_
 from postprocess.output_dependency import OUTPUT_DEPENDENCIES
 from postprocess.volume_command import (
@@ -38,7 +41,10 @@ _HANDLERS: dict[str, PostprocessHandler] = {
     "boundary_moment": lambda _ctx: build_boundary_force_moment_commands_(_ctx),
     "boundary_stress": lambda _ctx: build_boundary_stress_commands_(_ctx),
     "volume_stress": lambda _ctx: build_volume_stress_commands_(_ctx),
+    # Derived outputs computed in Python (see excel_io)
+    "avg_volume_stress": _noop,
     # Intermediate outputs (not written to Excel)
+    "elem_sene": lambda _ctx: build_element_strain_energy_commands_(_ctx),
     "node_sene": lambda _ctx: build_node_strain_energy_commands_(_ctx),
     "node_volmass": lambda _ctx: build_node_volume_mass_commands_(_ctx),
     "volume": lambda _ctx: build_volume_commands_(_ctx),

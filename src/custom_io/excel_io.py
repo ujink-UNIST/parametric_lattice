@@ -6,6 +6,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
+import numpy as np
 import xlwings as xw  # type: ignore[import-not-found]
 from xlwings.main import Table  # type: ignore[import-not-found]
 
@@ -555,7 +556,31 @@ def run_postprocess(
                         mapdl.parameters["pp_boundary_stress"],
                     )
 
-                # Write this case's outputs immediately so Excel updates row-by-row.
+                if "volume_stress" in needed:
+                    q.add_Vector6(
+                        row0,
+                        "volume_stress",
+                        mapdl.parameters["pp_volume_stress"],
+                    )
+
+                if "avg_volume_stress" in needed:
+                    vol = float(mapdl.parameters["pp_volume"])
+                    vs = mapdl.parameters["pp_volume_stress"]
+                    if hasattr(vs, "ravel"):
+                        vs6 = [float(x) for x in vs.ravel().tolist()]
+                    else:
+                        vs6 = [float(x) for x in vs]
+                    if vol == 0.0:
+                        avg6 = [float("nan")] * 6
+                    else:
+                        avg6 = [x / vol for x in vs6]
+
+                    avg6_excel = np.asarray(
+                        [avg6[0], avg6[1], avg6[2], avg6[3], avg6[4], avg6[5]],
+                        dtype=float,
+                    )
+                    q.add_Vector6(row0, "avg_volume_stress", avg6_excel)
+
                 q.flush(output_table)
     except Exception as e:
         print(f"Error: {e}")

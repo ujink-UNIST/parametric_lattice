@@ -76,8 +76,8 @@ def build_boundary_stress_commands_(ctx: PostprocessContext) -> ApdlCommands:
       with normal axis j, i.e. sigma_ij.
 
     Storage:
-      pp_boundary_stress(k) with convention [XX, YY, ZZ, YZ, XZ, XY].
-      This matches `write_Vector6` and the Excel column naming.
+      pp_boundary_stress(k) with convention [X, Y, Z, XY, YZ, XZ].
+      This matches APDL Vector6 ordering.
     """
 
     _ = ctx
@@ -88,24 +88,24 @@ def build_boundary_stress_commands_(ctx: PostprocessContext) -> ApdlCommands:
         apdl_command("ALLSEL,ALL"),
         apdl_command(
             "*DIM,pp_boundary_stress,ARRAY,6",
-            "[XX, YY, ZZ, YZ, XZ, XY]",
+            "[X, Y, Z, XY, YZ, XZ]",
         ),
         # Diagonals
         apdl_command("pp_boundary_stress(1)=pp_boundary_traction(1,1)", "XX"),
         apdl_command("pp_boundary_stress(2)=pp_boundary_traction(2,2)", "YY"),
         apdl_command("pp_boundary_stress(3)=pp_boundary_traction(3,3)", "ZZ"),
-        # Symmetrized shear terms
+        # Symmetrized shear terms (APDL Vector6 order: XY, YZ, XZ)
         apdl_command(
-            "pp_boundary_stress(4)=(pp_boundary_traction(2,3)+pp_boundary_traction(3,2))/2",
+            "pp_boundary_stress(4)=(pp_boundary_traction(1,2)+pp_boundary_traction(2,1))/2",
+            "XY=(XY+YX)/2",
+        ),
+        apdl_command(
+            "pp_boundary_stress(5)=(pp_boundary_traction(2,3)+pp_boundary_traction(3,2))/2",
             "YZ=(YZ+ZY)/2",
         ),
         apdl_command(
-            "pp_boundary_stress(5)=(pp_boundary_traction(1,3)+pp_boundary_traction(3,1))/2",
+            "pp_boundary_stress(6)=(pp_boundary_traction(1,3)+pp_boundary_traction(3,1))/2",
             "XZ=(XZ+ZX)/2",
-        ),
-        apdl_command(
-            "pp_boundary_stress(6)=(pp_boundary_traction(1,2)+pp_boundary_traction(2,1))/2",
-            "XY=(XY+YX)/2",
         ),
     ]
 

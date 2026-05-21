@@ -19,8 +19,12 @@ from __future__ import annotations
 OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "boundary_traction": ("boundary_force",),
     "boundary_stress": ("boundary_traction",),
-    # node_sene currently has no prerequisites (kept here so it can participate
-    # in prefix expansion/toposort if requested).
+    "volume_stress": (),
+    # Average stress requires both the volume-weighted sum and the total volume.
+    "avg_volume_stress": ("volume_stress", "volume"),
+    # Intermediate outputs (not written to Excel). Kept here so they can
+    # participate in prefix expansion/toposort if requested.
+    "elem_sene": (),
     "node_sene": (),
     "node_volmass": (),
     "volume": (),
