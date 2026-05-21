@@ -22,6 +22,11 @@ POSTPROCESS_OUTPUT_SPEC: dict[str, int] = {
     "boundary_force": 9,
     "boundary_moment": 9,
     "boundary_stress": 6,
+    # Derived (Python) outputs
+    "boundary_modulus": 6,
+    "boundary_modulus_ratio": 6,
+    "effective_youngs_modulus": 3,
+    "effective_shear_modulus": 3,
     "volume_stress": 6,
     "volume_avg_stress": 6,
     "volume_energy": 1,
@@ -36,7 +41,12 @@ POSTPROCESS_OUTPUT_SPEC: dict[str, int] = {
 # - volume: available for all simulation types (modal/modal_ff + xx..xz)
 # - everything else in this postprocess module: only for xx/yy/zz/xy/yz/xz
 _SIM_TYPES_MODAL: frozenset[str] = frozenset({"modal", "modal_ff"})
-_SIM_TYPES_STATIC: frozenset[str] = frozenset({"xx", "yy", "zz", "xy", "yz", "xz"})
+
+# Static solve types (strain-driven macro deformation cases)
+_SIM_TYPES_STATIC_NORMAL: frozenset[str] = frozenset({"xx", "yy", "zz"})
+_SIM_TYPES_STATIC_SHEAR: frozenset[str] = frozenset({"xy", "yz", "xz"})
+_SIM_TYPES_STATIC: frozenset[str] = _SIM_TYPES_STATIC_NORMAL | _SIM_TYPES_STATIC_SHEAR
+
 _SIM_TYPES_ALL: frozenset[str] = _SIM_TYPES_MODAL | _SIM_TYPES_STATIC
 
 POSTPROCESS_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
@@ -52,6 +62,10 @@ POSTPROCESS_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
     "boundary_force": _SIM_TYPES_STATIC,
     "boundary_moment": _SIM_TYPES_STATIC,
     "boundary_stress": _SIM_TYPES_STATIC,
+    "boundary_modulus": _SIM_TYPES_STATIC,
+    "boundary_modulus_ratio": _SIM_TYPES_STATIC,
+    "effective_youngs_modulus": _SIM_TYPES_STATIC_NORMAL,
+    "effective_shear_modulus": _SIM_TYPES_STATIC_SHEAR,
     "volume_stress": _SIM_TYPES_STATIC,
     "volume_avg_stress": _SIM_TYPES_STATIC,
     "volume_energy": _SIM_TYPES_STATIC,

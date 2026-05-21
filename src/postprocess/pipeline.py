@@ -45,6 +45,10 @@ _HANDLERS: dict[str, PostprocessHandler] = {
     "volume_stress": lambda _ctx: build_volume_stress_commands_(_ctx),
     "volume_energy": lambda _ctx: build_volume_energy_commands_(_ctx),
     # Derived outputs computed in Python (see excel_io)
+    "boundary_modulus": _noop,
+    "boundary_modulus_ratio": _noop,
+    "effective_youngs_modulus": _noop,
+    "effective_shear_modulus": _noop,
     "volume_avg_stress": _noop,
     "volume_avg_energy": _noop,
     # Intermediate outputs (not written to Excel)

@@ -736,6 +736,26 @@ def run_postprocess(
                     ncomp = needed.get(p, 1)
                     if ncomp == 1:
                         q.add_float(row0, p, EXCEL_NA)
+                    elif ncomp == 3:
+                        # Could be X/Y/Z or XY/YZ/XZ depending on the prefix.
+                        if p == "effective_shear_modulus":
+                            q.add_values(
+                                row0,
+                                {
+                                    f"{p}_XY": EXCEL_NA,
+                                    f"{p}_YZ": EXCEL_NA,
+                                    f"{p}_XZ": EXCEL_NA,
+                                },
+                            )
+                        else:
+                            q.add_values(
+                                row0,
+                                {
+                                    f"{p}_X": EXCEL_NA,
+                                    f"{p}_Y": EXCEL_NA,
+                                    f"{p}_Z": EXCEL_NA,
+                                },
+                            )
                     elif ncomp == 6:
                         q.add_values(
                             row0,
@@ -855,6 +875,117 @@ def run_postprocess(
                         "boundary_stress",
                         mapdl.parameters["pp_boundary_stress"],
                     )
+
+                if (
+                    "boundary_modulus" in allowed_needed
+                    or "boundary_modulus_ratio" in allowed_needed
+                    or "effective_youngs_modulus" in allowed_needed
+                    or "effective_shear_modulus" in allowed_needed
+                ):
+                    # boundary_modulus = boundary_stress / ε
+                    eps = float(sim_case.post_mesh_spec.setup.strain)
+                    E = float(sim_case.post_mesh_spec.material.e_mod)
+                    sim_type = str(sim_case.post_mesh_spec.setup.sim_type).strip().lower()
+
+                    from custom_io.excel_write import EXCEL_NA
+
+                    if eps == 0.0:
+                        # All derived quantities undefined when ε=0.
+                        if "boundary_modulus" in allowed_needed:
+                            q.add_values(
+                                row0,
+                                {
+                                    "boundary_modulus_X": EXCEL_NA,
+                                    "boundary_modulus_Y": EXCEL_NA,
+                                    "boundary_modulus_Z": EXCEL_NA,
+                                    "boundary_modulus_XY": EXCEL_NA,
+                                    "boundary_modulus_YZ": EXCEL_NA,
+                                    "boundary_modulus_XZ": EXCEL_NA,
+                                },
+                            )
+                        if "boundary_modulus_ratio" in allowed_needed:
+                            q.add_values(
+                                row0,
+                                {
+                                    "boundary_modulus_ratio_X": EXCEL_NA,
+                                    "boundary_modulus_ratio_Y": EXCEL_NA,
+                                    "boundary_modulus_ratio_Z": EXCEL_NA,
+                                    "boundary_modulus_ratio_XY": EXCEL_NA,
+                                    "boundary_modulus_ratio_YZ": EXCEL_NA,
+                                    "boundary_modulus_ratio_XZ": EXCEL_NA,
+                                },
+                            )
+                        if "effective_youngs_modulus" in allowed_needed:
+                            q.add_values(
+                                row0,
+                                {
+                                    "effective_youngs_modulus_X": EXCEL_NA,
+                                    "effective_youngs_modulus_Y": EXCEL_NA,
+                                    "effective_youngs_modulus_Z": EXCEL_NA,
+                                },
+                            )
+                        if "effective_shear_modulus" in allowed_needed:
+                            q.add_values(
+                                row0,
+                                {
+                                    "effective_shear_modulus_XY": EXCEL_NA,
+                                    "effective_shear_modulus_YZ": EXCEL_NA,
+                                    "effective_shear_modulus_XZ": EXCEL_NA,
+                                },
+                            )
+                    else:
+                        bs = mapdl.parameters["pp_boundary_stress"]
+                        bs6 = np.asarray(bs, dtype=float).reshape(-1)
+                        mod6 = bs6 / eps
+
+                        if "boundary_modulus" in allowed_needed:
+                            q.add_Vector6(row0, "boundary_modulus", mod6)
+
+                        if "boundary_modulus_ratio" in allowed_needed:
+                            if E == 0.0:
+                                q.add_values(
+                                    row0,
+                                    {
+                                        "boundary_modulus_ratio_X": EXCEL_NA,
+                                        "boundary_modulus_ratio_Y": EXCEL_NA,
+                                        "boundary_modulus_ratio_Z": EXCEL_NA,
+                                        "boundary_modulus_ratio_XY": EXCEL_NA,
+                                        "boundary_modulus_ratio_YZ": EXCEL_NA,
+                                        "boundary_modulus_ratio_XZ": EXCEL_NA,
+                                    },
+                                )
+                            else:
+                                q.add_Vector6(row0, "boundary_modulus_ratio", mod6 / E)
+
+                        if "effective_youngs_modulus" in allowed_needed:
+                            # Vector3: only one component is populated per case.
+                            vals = {
+                                "effective_youngs_modulus_X": EXCEL_NA,
+                                "effective_youngs_modulus_Y": EXCEL_NA,
+                                "effective_youngs_modulus_Z": EXCEL_NA,
+                            }
+                            if sim_type == "xx":
+                                vals["effective_youngs_modulus_X"] = float(mod6[0])
+                            elif sim_type == "yy":
+                                vals["effective_youngs_modulus_Y"] = float(mod6[1])
+                            elif sim_type == "zz":
+                                vals["effective_youngs_modulus_Z"] = float(mod6[2])
+                            q.add_values(row0, vals)
+
+                        if "effective_shear_modulus" in allowed_needed:
+                            # Shear modulus uses σ_ij = 2 G ε_ij (tensor shear strain).
+                            vals = {
+                                "effective_shear_modulus_XY": EXCEL_NA,
+                                "effective_shear_modulus_YZ": EXCEL_NA,
+                                "effective_shear_modulus_XZ": EXCEL_NA,
+                            }
+                            if sim_type == "xy":
+                                vals["effective_shear_modulus_XY"] = float(mod6[3]) / 2.0
+                            elif sim_type == "yz":
+                                vals["effective_shear_modulus_YZ"] = float(mod6[4]) / 2.0
+                            elif sim_type == "xz":
+                                vals["effective_shear_modulus_XZ"] = float(mod6[5]) / 2.0
+                            q.add_values(row0, vals)
 
                 if "volume_stress" in allowed_needed:
                     q.add_Vector6(

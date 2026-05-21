@@ -19,6 +19,11 @@ from __future__ import annotations
 OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "boundary_traction": ("boundary_force",),
     "boundary_stress": ("boundary_traction",),
+    # Derived in Python but depends on boundary_stress being computed.
+    "boundary_modulus": ("boundary_stress",),
+    "boundary_modulus_ratio": ("boundary_modulus",),
+    "effective_youngs_modulus": ("boundary_modulus",),
+    "effective_shear_modulus": ("boundary_modulus",),
     "volume_stress": (),
     "volume_energy": (),
     # Volume averages require both the sum and the total volume.
