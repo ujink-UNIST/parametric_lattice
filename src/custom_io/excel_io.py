@@ -67,6 +67,13 @@ _DONE_COLOR = (198, 239, 206)  # light green
 _FAIL_COLOR = (255, 199, 206)  # light red
 _SKIP_COLOR = (221, 235, 247)  # light blue
 
+# Status font colors (RGB)
+_PENDING_FONT = (90, 90, 90)  # dark gray
+_RUNNING_FONT = (156, 101, 0)  # dark orange/brown
+_DONE_FONT = (0, 97, 0)  # dark green
+_FAIL_FONT = (156, 0, 6)  # dark red
+_SKIP_FONT = (31, 78, 121)  # dark blue
+
 
 def _doevents(book: xw.Book) -> None:
     """Let Excel process UI events (best-effort).
@@ -78,14 +85,25 @@ def _doevents(book: xw.Book) -> None:
         book.app.api.Run("DoEvents")
 
 
+def _rgb_to_excel_color(rgb: tuple[int, int, int]) -> int:
+    """Convert (R,G,B) to Excel/VBA Color integer (BGR)."""
+
+    r, g, b = (int(rgb[0]), int(rgb[1]), int(rgb[2]))
+    return (b << 16) | (g << 8) | r
+
+
 def _style_status_cell(
     cell: xw.Range,
     *,
     fill_rgb: tuple[int, int, int],
+    font_rgb: tuple[int, int, int] | None = None,
     bold: bool = False,
 ) -> None:
     with suppress(Exception):
         cell.color = fill_rgb
+    with suppress(Exception):
+        if font_rgb is not None:
+            cell.api.Font.Color = _rgb_to_excel_color(font_rgb)
     with suppress(Exception):
         cell.api.Font.Bold = bool(bold)
     with suppress(Exception):
@@ -96,7 +114,7 @@ def _set_status_pending(book: xw.Book, cell: xw.Range | None) -> None:
     if cell is None:
         return
     cell.value = _PENDING_MARK
-    _style_status_cell(cell, fill_rgb=_PENDING_COLOR, bold=True)
+    _style_status_cell(cell, fill_rgb=_PENDING_COLOR, font_rgb=_PENDING_FONT, bold=True)
     _doevents(book)
 
 
@@ -105,7 +123,7 @@ def _set_status_running(book: xw.Book, cell: xw.Range | None) -> None:
         return
     # Mirror the global spinner cell (Sheet1!A1) while this case runs.
     cell.formula = "=Sheet1!$A$1"
-    _style_status_cell(cell, fill_rgb=_RUNNING_COLOR)
+    _style_status_cell(cell, fill_rgb=_RUNNING_COLOR, font_rgb=_RUNNING_FONT)
     _doevents(book)
 
 
@@ -113,7 +131,7 @@ def _set_status_done(book: xw.Book, cell: xw.Range | None) -> None:
     if cell is None:
         return
     cell.value = _DONE_MARK
-    _style_status_cell(cell, fill_rgb=_DONE_COLOR)
+    _style_status_cell(cell, fill_rgb=_DONE_COLOR, font_rgb=_DONE_FONT)
     _doevents(book)
 
 
@@ -121,7 +139,7 @@ def _set_status_fail(book: xw.Book, cell: xw.Range | None) -> None:
     if cell is None:
         return
     cell.value = _FAIL_MARK
-    _style_status_cell(cell, fill_rgb=_FAIL_COLOR)
+    _style_status_cell(cell, fill_rgb=_FAIL_COLOR, font_rgb=_FAIL_FONT)
     _doevents(book)
 
 
@@ -129,7 +147,7 @@ def _set_status_skip(book: xw.Book, cell: xw.Range | None) -> None:
     if cell is None:
         return
     cell.value = _SKIP_MARK
-    _style_status_cell(cell, fill_rgb=_SKIP_COLOR)
+    _style_status_cell(cell, fill_rgb=_SKIP_COLOR, font_rgb=_SKIP_FONT)
     _doevents(book)
 
 
