@@ -19,6 +19,11 @@ from pathlib import Path
 
 _FRAMES: tuple[str, ...] = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
+# Spinner update tempo.
+# 100 bpm = 100 updates/minute => 0.6 s per frame.
+_DEFAULT_BPM: float = 100.0
+_DEFAULT_PERIOD_S: float = 60.0 / _DEFAULT_BPM
+
 
 def _find_open_book(app, fullname: str):
     """Best-effort: find an already-open workbook by absolute fullname."""
@@ -121,7 +126,7 @@ def start_cell_spinner(
     *,
     sheet_name: str = "Sheet1",
     address: str = "A1",
-    period_s: float = 0.15,
+    period_s: float = _DEFAULT_PERIOD_S,
     frames: Sequence[str] = _FRAMES,
 ) -> CellSpinner:
     stop = Event()
