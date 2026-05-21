@@ -73,6 +73,8 @@ def import_mesh_db(sim_case: SimCase) -> ApdlCommands:
             f"Mesh DB not found for mesh_hash={_get_mesh_hash(sim_case)}: {db_path}"
         )
 
+    # NOTE: RESUME typically leaves MAPDL in PREP7, but we add /PREP7 again
+    # for safety because downstream commands (MP, ET, etc.) require it.
     return (
         "",
         apdl_section("IMPORT MESH DB"),

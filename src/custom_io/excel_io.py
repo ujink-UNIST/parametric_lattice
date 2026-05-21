@@ -534,7 +534,8 @@ def run_cases(
                 pipeline = (
                     ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
                     + import_mesh_db(sim_case)
-                    + ("/FILNAME,case",)
+                    # RESUME may reset jobname; /FILNAME must run at BEGIN level.
+                    + ("FINISH", "/FILNAME,case", "/PREP7")
                     + material_commands(sim_case.post_mesh_spec.material)
                     + setup_commands(
                         unit_cell,
@@ -556,7 +557,8 @@ def run_cases(
                 pipeline = (
                     ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
                     + import_geometry_db(sim_case)
-                    + ("/FILNAME,case",)
+                    # RESUME may reset jobname; /FILNAME must run at BEGIN level.
+                    + ("FINISH", "/FILNAME,case", "/PREP7")
                     + meshing_commands(
                         unit_cell,
                         sim_case.pre_mesh_spec.geometry,
