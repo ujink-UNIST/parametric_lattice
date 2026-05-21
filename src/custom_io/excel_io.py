@@ -865,29 +865,8 @@ def run_postprocess(
                 if "hash" in allowed_needed:
                     q.add_str(row0, "hash", case_hash)
 
-                # Volume is computed in Python from mesh.cdb for robustness.
-                volume_val: float | None = None
-                if (
-                    "volume" in allowed_needed
-                    or "volume_avg_stress" in allowed_needed
-                    or "volume_avg_energy" in allowed_needed
-                ):
-                    from custom_io.boundary_touch_area import compute_total_volume_from_cdb
-                    from custom_io.mesh_io import mesh_db_dir
-
-                    cdb_path = mesh_db_dir(sim_case) / "mesh.cdb"
-                    try:
-                        volume_val = compute_total_volume_from_cdb(cdb_path=cdb_path)
-                    except Exception:
-                        volume_val = None
-
                 if "volume" in allowed_needed:
-                    if volume_val is None:
-                        from custom_io.excel_write import EXCEL_NA
-
-                        q.add_float(row0, "volume", EXCEL_NA)
-                    else:
-                        q.add_float(row0, "volume", volume_val)
+                    q.add_float(row0, "volume", mapdl.parameters["pp_volume"])
 
                 if "boundary_traction" in allowed_needed:
                     q.add_Vector3x3(
@@ -1036,16 +1015,17 @@ def run_postprocess(
                     )
 
                 if "volume_avg_stress" in allowed_needed:
+                    vol = float(mapdl.parameters["pp_volume"])
                     vs = mapdl.parameters["pp_volume_stress"]
                     if hasattr(vs, "ravel"):
                         vs6 = [float(x) for x in vs.ravel().tolist()]
                     else:
                         vs6 = [float(x) for x in vs]
 
-                    if volume_val is None or volume_val == 0.0:
+                    if vol == 0.0:
                         avg6 = [float("nan")] * 6
                     else:
-                        avg6 = [x / float(volume_val) for x in vs6]
+                        avg6 = [x / vol for x in vs6]
 
                     q.add_Vector6(
                         row0,
@@ -1059,11 +1039,12 @@ def run_postprocess(
                     )
 
                 if "volume_avg_energy" in allowed_needed:
+                    vol = float(mapdl.parameters["pp_volume"])
                     ve = float(mapdl.parameters["pp_volume_energy"])
-                    if volume_val is None or volume_val == 0.0:
+                    if vol == 0.0:
                         q.add_float(row0, "volume_avg_energy", float("nan"))
                     else:
-                        q.add_float(row0, "volume_avg_energy", ve / float(volume_val))
+                        q.add_float(row0, "volume_avg_energy", ve / vol)
 
                 # Mesh-derived boundary touch area (solid-only assumption)
                 # Also used internally for contact_traction/contact_stress.

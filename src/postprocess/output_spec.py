@@ -59,8 +59,8 @@ POSTPROCESS_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
     # Excel-written scalars: always allowed
     "index": _SIM_TYPES_ALL,
     "hash": _SIM_TYPES_ALL,
-    # Volume is always available
-    "volume": _SIM_TYPES_ALL,
+    # Volume via POST1 ETABLE,VOLU (static only for now)
+    "volume": _SIM_TYPES_STATIC,
     # Modal-only outputs
     **{f"res_freq_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
     **{f"part_factor_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
