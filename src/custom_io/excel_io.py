@@ -55,11 +55,10 @@ _CONFIG_TABLE = "t_config"
 # UI: lightweight progress indicator column (outside the t_input table)
 # For a running case at table body row i, we write to e.g. A{excel_row}.
 _STATUS_COL = "A"
-_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 _PENDING_MARK = "…"
-_DONE_MARK = "✓"
-_FAIL_MARK = "✗"
-_SKIP_MARK = "»"
+_DONE_MARK = "✔"
+_FAIL_MARK = "✘"
+_SKIP_MARK = "➥"
 
 # Status cell styling (RGB)
 _PENDING_COLOR = (235, 235, 235)  # light gray
@@ -79,11 +78,16 @@ def _doevents(book: xw.Book) -> None:
         book.app.api.Run("DoEvents")
 
 
-def _style_status_cell(cell: xw.Range, *, fill_rgb: tuple[int, int, int]) -> None:
+def _style_status_cell(
+    cell: xw.Range,
+    *,
+    fill_rgb: tuple[int, int, int],
+    bold: bool = False,
+) -> None:
     with suppress(Exception):
         cell.color = fill_rgb
     with suppress(Exception):
-        cell.api.Font.Bold = True
+        cell.api.Font.Bold = bool(bold)
     with suppress(Exception):
         cell.api.HorizontalAlignment = -4108  # xlCenter
 
@@ -92,7 +96,7 @@ def _set_status_pending(book: xw.Book, cell: xw.Range | None) -> None:
     if cell is None:
         return
     cell.value = _PENDING_MARK
-    _style_status_cell(cell, fill_rgb=_PENDING_COLOR)
+    _style_status_cell(cell, fill_rgb=_PENDING_COLOR, bold=True)
     _doevents(book)
 
 
@@ -349,7 +353,9 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     return None
 
 
-def _meta_matches(path: Path, *, key_field: str, hash_field: str, key: str, h: str) -> bool:
+def _meta_matches(
+    path: Path, *, key_field: str, hash_field: str, key: str, h: str
+) -> bool:
     meta = _read_json(path)
     if not isinstance(meta, dict):
         return False
@@ -510,7 +516,9 @@ def run_cases(
                     from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
                     from custom_io.lgf_io import import_lgf
 
-                    lattice = lgf_to_lattice(import_lgf(sim_case.pre_mesh_spec.geometry.cell_name))
+                    lattice = lgf_to_lattice(
+                        import_lgf(sim_case.pre_mesh_spec.geometry.cell_name)
+                    )
                     unit_cell = lattice_to_unit_cell(lattice)
 
                     pipeline = (
@@ -531,7 +539,9 @@ def run_cases(
                     from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
                     from custom_io.lgf_io import import_lgf
 
-                    lattice = lgf_to_lattice(import_lgf(sim_case.pre_mesh_spec.geometry.cell_name))
+                    lattice = lgf_to_lattice(
+                        import_lgf(sim_case.pre_mesh_spec.geometry.cell_name)
+                    )
                     unit_cell = lattice_to_unit_cell(lattice)
 
                     pipeline = (
@@ -543,7 +553,11 @@ def run_cases(
                             sim_case.pre_mesh_spec.profile,
                             sim_case.pre_mesh_spec.meshing,
                         )
-                        + ((export_mesh_db(sim_case) + export_mesh_cdb(sim_case)) if save_intermediate else ())
+                        + (
+                            (export_mesh_db(sim_case) + export_mesh_cdb(sim_case))
+                            if save_intermediate
+                            else ()
+                        )
                         + material_commands(sim_case.post_mesh_spec.material)
                         + setup_commands(
                             unit_cell,
@@ -679,7 +693,9 @@ def run_postprocess(
                 sim_type = sim_case.post_mesh_spec.setup.sim_type
 
                 allowed_needed: dict[str, int] = {
-                    p: n for p, n in needed.items() if is_postprocess_output_allowed(p, sim_type)
+                    p: n
+                    for p, n in needed.items()
+                    if is_postprocess_output_allowed(p, sim_type)
                 }
                 disallowed = [p for p in needed.keys() if p not in allowed_needed]
 
@@ -846,7 +862,9 @@ def run_postprocess(
                     )
 
                 if "volume_energy" in allowed_needed:
-                    q.add_float(row0, "volume_energy", mapdl.parameters["pp_volume_energy"])
+                    q.add_float(
+                        row0, "volume_energy", mapdl.parameters["pp_volume_energy"]
+                    )
 
                 if "volume_avg_energy" in allowed_needed:
                     vol = float(mapdl.parameters["pp_volume"])

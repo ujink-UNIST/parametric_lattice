@@ -66,6 +66,8 @@ def _spinner_proc(
         sht = book.sheets[0]
 
     rng = sht.range(address)
+    with suppress(Exception):
+        rng.api.Font.Bold = False
 
     i = 0
     n = len(frames)
