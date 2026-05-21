@@ -11,9 +11,53 @@ from datetime import datetime
 from ansys.mapdl.core.launcher import launch_mapdl
 from ansys.mapdl.core.mapdl_console import MapdlConsole
 from ansys.mapdl.core.mapdl_grpc import MapdlGrpc
+from ansys.mapdl.core.launcher.errors import LaunchError
 
 from core.apdl_commands import ApdlCommands, Mapdl
 from core.apdl_settings import ApdlSettings
+
+
+def _print_port_users(port: int) -> None:
+    """Best-effort: print which process(es) are listening on/using `port`."""
+
+    try:
+        import psutil  # type: ignore
+    except ImportError:
+        print(f"[mapdl] Port {port} check skipped (psutil not installed)")
+        return
+
+    try:
+        conns = psutil.net_connections(kind="inet")
+    except Exception as e:
+        print(f"[mapdl] Port {port} check failed: {e}")
+        return
+
+    hits = []
+    for c in conns:
+        laddr = getattr(c, "laddr", None)
+        if not laddr:
+            continue
+        if getattr(laddr, "port", None) != port:
+            continue
+        hits.append(c)
+
+    if not hits:
+        return
+
+    print(f"[mapdl] Port {port} is already in use by:")
+    for c in hits:
+        pid = getattr(c, "pid", None)
+        status = getattr(c, "status", None)
+        laddr = getattr(c, "laddr", None)
+        raddr = getattr(c, "raddr", None)
+        proc_desc = "<unknown>"
+        if pid:
+            try:
+                p = psutil.Process(pid)
+                proc_desc = f"{p.name()} (pid={pid}) cmdline={' '.join(p.cmdline())}"
+            except Exception:
+                proc_desc = f"pid={pid}"
+        print(f"  - {proc_desc} status={status} laddr={laddr} raddr={raddr}")
 
 
 def start_mapdl(
@@ -26,7 +70,19 @@ def start_mapdl(
     kwargs = settings.to_launch_kwargs()
     kwargs.update(launch_kwargs)
 
-    return launch_mapdl(**kwargs)
+    # Preflight check: if we're using gRPC, the default port is 50052 unless overridden.
+    if kwargs.get("mode") == "grpc":
+        port = int(kwargs.get("port", 50052))
+        _print_port_users(port)
+
+    try:
+        return launch_mapdl(**kwargs)
+    except LaunchError:
+        # Print again on failure to make debugging easier.
+        if kwargs.get("mode") == "grpc":
+            port = int(kwargs.get("port", 50052))
+            _print_port_users(port)
+        raise
 
 
 def run_commands(
