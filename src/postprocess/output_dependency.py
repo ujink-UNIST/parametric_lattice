@@ -24,6 +24,8 @@ OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "boundary_modulus_ratio": ("boundary_modulus",),
     "effective_youngs_modulus": ("boundary_modulus",),
     "effective_shear_modulus": ("boundary_modulus",),
+    # Mesh-derived (computed in Python). No MAPDL dependency.
+    "boundary_touch_area": (),
     "volume_stress": (),
     "volume_energy": (),
     # Volume averages require both the sum and the total volume.

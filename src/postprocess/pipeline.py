@@ -49,6 +49,7 @@ _HANDLERS: dict[str, PostprocessHandler] = {
     "boundary_modulus_ratio": _noop,
     "effective_youngs_modulus": _noop,
     "effective_shear_modulus": _noop,
+    "boundary_touch_area": _noop,
     "volume_avg_stress": _noop,
     "volume_avg_energy": _noop,
     # Intermediate outputs (not written to Excel)

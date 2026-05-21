@@ -1045,6 +1045,40 @@ def run_postprocess(
                     else:
                         q.add_float(row0, "volume_avg_energy", ve / vol)
 
+                # Mesh-derived boundary touch area (solid-only assumption)
+                if "boundary_touch_area" in allowed_needed:
+                    from custom_io.boundary_touch_area import compute_boundary_touch_area_from_cdb
+                    from custom_io.mesh_io import mesh_db_dir
+
+                    # Use mesh archive (.cdb) written under artifacts/mesh_db/<mesh_hash>/mesh.cdb
+                    cdb_path = mesh_db_dir(sim_case) / "mesh.cdb"
+                    tol = 1e-6 * float(sim_case.pre_mesh_spec.meshing.max_element_size)
+                    try:
+                        res = compute_boundary_touch_area_from_cdb(
+                            cdb_path=cdb_path,
+                            size_xyz=sim_case.pre_mesh_spec.geometry.size,
+                            tol=tol,
+                        )
+                        q.add_values(
+                            row0,
+                            {
+                                "boundary_touch_area_X": float(res.ax),
+                                "boundary_touch_area_Y": float(res.ay),
+                                "boundary_touch_area_Z": float(res.az),
+                            },
+                        )
+                    except Exception:
+                        from custom_io.excel_write import EXCEL_NA
+
+                        q.add_values(
+                            row0,
+                            {
+                                "boundary_touch_area_X": EXCEL_NA,
+                                "boundary_touch_area_Y": EXCEL_NA,
+                                "boundary_touch_area_Z": EXCEL_NA,
+                            },
+                        )
+
                 # Modal resonant frequencies (mode 1..20)
                 for i in range(1, 21):
                     key = f"res_freq_{i}"
