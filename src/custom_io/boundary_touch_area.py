@@ -70,34 +70,78 @@ def _parse_cdb_nodes(path: Path) -> dict[int, np.ndarray]:
 
 
 def _parse_cdb_tet_elements(path: Path) -> list[tuple[int, int, int, int]]:
-    """Return list of tet corner node tuples (n1,n2,n3,n4)."""
+    """Return list of tet corner node tuples (n1,n2,n3,n4).
 
-    elems: list[tuple[int, int, int, int]] = []
+    EBLOCK records are fixed-length integer records (e.g. EBLOCK,19,...) but are
+    commonly wrapped across multiple lines. We therefore must reconstruct each
+    element record by chunking the EBLOCK integer stream.
+
+    This implementation targets meshes written by ``CDWRITE,GEOM,...,BLOCKED``.
+
+    For SOLID187 (tet10) with EBLOCK,19, the last 10 integers of each record are
+    typically the node connectivity (10 nodes). Corner nodes are the first 4 of
+    those 10.
+    """
+
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+
     in_eblock = False
+    nint: int | None = None
+    ints: list[int] = []
 
-    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for raw in lines:
         line = raw.strip()
         if not line:
             continue
         u = line.upper()
+
         if u.startswith("EBLOCK"):
             in_eblock = True
+            # EBLOCK,<nint>,...
+            try:
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 2:
+                    nint = int(parts[1])
+            except Exception:
+                nint = None
             continue
-        if in_eblock:
-            if line.startswith("-1"):
-                in_eblock = False
+
+        if not in_eblock:
+            continue
+
+        if line.startswith("-1"):
+            break
+
+        if line.startswith("("):
+            continue
+
+        for tok in _nums(line):
+            try:
+                ints.append(int(float(tok)))
+            except Exception:
                 continue
-            if line.startswith("("):
-                continue
-            vals = _nums(line)
-            if len(vals) < 4:
-                continue
-            # Blocked EBLOCK lines contain many ints. Connectivity is at the end.
-            # For SOLID187, first 4 are corner nodes.
-            conn = [int(float(v)) for v in vals if float(v).is_integer()]
-            if len(conn) < 4:
-                continue
-            n1, n2, n3, n4 = conn[-10:-6] if len(conn) >= 10 else conn[-4:]
+
+    if not ints:
+        return []
+
+    if nint is None or nint <= 0:
+        nint = 19
+
+    elems: list[tuple[int, int, int, int]] = []
+    nrec = len(ints) // nint
+
+    for r in range(nrec):
+        rec = ints[r * nint : (r + 1) * nint]
+        if len(rec) != nint:
+            continue
+
+        # Connectivity is at the end.
+        conn = rec[-10:] if len(rec) >= 10 else rec
+        if len(conn) < 4:
+            continue
+
+        n1, n2, n3, n4 = conn[0], conn[1], conn[2], conn[3]
+        if n1 > 0 and n2 > 0 and n3 > 0 and n4 > 0:
             elems.append((n1, n2, n3, n4))
 
     return elems
