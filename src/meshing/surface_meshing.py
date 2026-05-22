@@ -158,6 +158,11 @@ def build_surface_area_meshing_commands_(
     eps = np.linalg.norm(geometry_params.size) * 0.005
     hx, hy, hz = geometry_params.size / 2
 
+    # Touch area placeholders (average area on ±axis planes).
+    # We compute one side (-axis) here under the assumption the opposite side
+    # has identical area for this reused mesh.
+    cmds.extend(("pp_touch_ax=0", "pp_touch_ay=0", "pp_touch_az=0"))
+
     face_pairs = [
         ("X", hx),
         ("Y", hy),
@@ -165,7 +170,10 @@ def build_surface_area_meshing_commands_(
     ]
 
     for a0, h0 in face_pairs:
-        # Source faces meshing
+        # Source faces meshing (and compute touch area on the -{a0} boundary)
+        # We compute the total geometric area of all selected boundary AREAs
+        # via ASUM, then store it into pp_touch_a{axis_lower}.
+        axis_lower = a0.lower()
         cmds.extend(
             apdl_block(
                 f"""
@@ -173,6 +181,11 @@ NSRC=0
 ASEL,S,LOC,{a0},{-h0-eps},{-h0+eps}
 *GET,NSRC,AREA,0,COUNT
 *IF,NSRC,GT,0,THEN
+  ! Total boundary area on -{a0} face(s)
+  ASUM
+  *GET,pp__touch_a{axis_lower},AREA,0,AREA
+  pp_touch_a{axis_lower}=pp__touch_a{axis_lower}
+
   CM,FACE_SRC,AREA
   AESIZE,ALL,{meshing_params.max_element_size}
   AMESH,ALL

@@ -178,67 +178,70 @@ def compute_total_volume_from_cdb(*, cdb_path: Path) -> float:
     return float(vol)
 
 
+def _try_read_touch_area_metadata_from_cdb(cdb_path: Path) -> TouchAreaResult | None:
+    """Read touch area metadata embedded as /COM lines in mesh.cdb.
+
+    Expected lines (order-independent):
+      /COM,PP_TOUCH_AX,<float>
+      /COM,PP_TOUCH_AY,<float>
+      /COM,PP_TOUCH_AZ,<float>
+
+    Returns None if any key is missing or cannot be parsed.
+    """
+
+    want = {"PP_TOUCH_AX": None, "PP_TOUCH_AY": None, "PP_TOUCH_AZ": None}
+    try:
+        for raw in cdb_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw.strip()
+            if not line.upper().startswith("/COM,"):
+                continue
+            # Split at commas, keep empty parts if any.
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 3:
+                continue
+            key = parts[1].upper()
+            if key not in want:
+                continue
+            try:
+                val = float(parts[2])
+            except Exception:
+                continue
+            want[key] = val
+    except Exception:
+        return None
+
+    if any(v is None for v in want.values()):
+        return None
+
+    return TouchAreaResult(
+        ax=float(want["PP_TOUCH_AX"]),
+        ay=float(want["PP_TOUCH_AY"]),
+        az=float(want["PP_TOUCH_AZ"]),
+    )
+
+
 def compute_boundary_touch_area_from_cdb(
     *,
     cdb_path: Path,
     size_xyz: Iterable[float],
     tol: float,
 ) -> TouchAreaResult:
-    """Compute average touch area on ±X, ±Y, ±Z boundary planes."""
+    """Load average touch area (ax, ay, az) from mesh.cdb metadata.
 
-    nodes = _parse_cdb_nodes(cdb_path)
-    elems = _parse_cdb_tet_elements(cdb_path)
+    This function now *requires* that mesh.cdb contains embedded /COM metadata
+    lines (PP_TOUCH_AX/AY/AZ). If they are missing, we raise an error instead of
+    falling back to mesh-derived computation.
 
-    sx, sy, sz = (float(x) for x in size_xyz)
-    x_p, x_n = sx / 2.0, -sx / 2.0
-    y_p, y_n = sy / 2.0, -sy / 2.0
-    z_p, z_n = sz / 2.0, -sz / 2.0
+    Parameters size_xyz and tol are kept for backward compatibility with the
+    existing call sites but are not used.
+    """
 
-    # Count faces to find exterior ones.
-    face_count: dict[tuple[int, int, int], int] = {}
-    face_nodes: dict[tuple[int, int, int], tuple[int, int, int]] = {}
+    _ = (size_xyz, tol)
 
-    for (n1, n2, n3, n4) in elems:
-        for f in _faces_of_tet(n1, n2, n3, n4):
-            key = tuple(sorted(f))
-            face_count[key] = face_count.get(key, 0) + 1
-            face_nodes[key] = f
-
-    a_px = a_nx = 0.0
-    a_py = a_ny = 0.0
-    a_pz = a_nz = 0.0
-
-    for key, cnt in face_count.items():
-        if cnt != 1:
-            continue
-        f = face_nodes[key]
-        try:
-            p1, p2, p3 = (nodes[f[0]], nodes[f[1]], nodes[f[2]])
-        except KeyError:
-            continue
-
-        area = _tri_area(p1, p2, p3)
-
-        # Classify by boundary plane.
-        xs = (p1[0], p2[0], p3[0])
-        ys = (p1[1], p2[1], p3[1])
-        zs = (p1[2], p2[2], p3[2])
-
-        if all(abs(x - x_p) <= tol for x in xs):
-            a_px += area
-        elif all(abs(x - x_n) <= tol for x in xs):
-            a_nx += area
-        elif all(abs(y - y_p) <= tol for y in ys):
-            a_py += area
-        elif all(abs(y - y_n) <= tol for y in ys):
-            a_ny += area
-        elif all(abs(z - z_p) <= tol for z in zs):
-            a_pz += area
-        elif all(abs(z - z_n) <= tol for z in zs):
-            a_nz += area
-
-    return TouchAreaResult(
-        ax=0.5 * (a_px + a_nx),
-        ay=0.5 * (a_py + a_ny),
-        az=0.5 * (a_pz + a_nz),
-    )
+    meta = _try_read_touch_area_metadata_from_cdb(cdb_path)
+    if meta is None:
+        raise RuntimeError(
+            "Touch area metadata missing in mesh.cdb. Expected /COM lines: "
+            "PP_TOUCH_AX, PP_TOUCH_AY, PP_TOUCH_AZ"
+        )
+    return meta

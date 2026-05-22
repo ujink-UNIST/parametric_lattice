@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from core.apdl_block import apdl_section
+from core.apdl_block import apdl_block, apdl_section
 from core.apdl_commands import ApdlCommands
 from core.hashing import sha1_hex
 from core.parameters.sim_case import SimCase
@@ -153,8 +153,30 @@ def export_mesh_cdb(sim_case: SimCase) -> ApdlCommands:
     # CDWRITE takes (Option, Fname, Ext). Fname may include a directory path.
     fname = (out_dir / _MESH_DB_BASENAME).as_posix()
 
+    # NOTE: CDWRITE does not reliably persist custom MAPDL parameters into the
+    # CDB output. For postprocess use-cases (e.g. boundary touch area), we append
+    # /COM lines to the end of the generated mesh.cdb.
+    #
+    # Expected upstream parameters (set during meshing):
+    #   - pp_touch_ax, pp_touch_ay, pp_touch_az
+    append_touch_area = apdl_section("APPEND TOUCH AREA METADATA")
+    append_touch_area += apdl_block(
+        f"""
+!*CFOPEN requires filename without quotes; we provide the full path in Fname.
+*CFOPEN,'{fname}','{_MESH_CDB_EXT}',,'APPEND'
+*VWRITE,pp_touch_ax
+('/COM,PP_TOUCH_AX,',E25.16)
+*VWRITE,pp_touch_ay
+('/COM,PP_TOUCH_AY,',E25.16)
+*VWRITE,pp_touch_az
+('/COM,PP_TOUCH_AZ,',E25.16)
+*CFCLOS
+"""
+    )
+
     return (
         "",
         apdl_section("EXPORT MESH CDB"),
         f"CDWRITE,GEOM,'{fname}','{_MESH_CDB_EXT}',,'','',BLOCKED",
-    )
+        "! --- Append custom metadata to mesh.cdb ---",
+    ) + append_touch_area
