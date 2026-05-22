@@ -80,8 +80,10 @@ def extract_boundary_force_rows(
     sim_type = str(ctx.sim_case.post_mesh_spec.setup.sim_type)
     metric = f"boundary_force.{sim_type}"
 
-    raw = mapdl.parameters.get("pp_boundary_force", None)
-    if raw is None:
+    # MAPDL parameters behaves like a mapping but does not implement .get().
+    try:
+        raw = mapdl.parameters["pp_boundary_force"]
+    except Exception:
         return []
 
     arr = np.asarray(raw, dtype=float).reshape(3, 3)
