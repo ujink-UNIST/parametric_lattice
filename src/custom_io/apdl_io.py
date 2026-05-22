@@ -85,12 +85,16 @@ def start_mapdl(
         raise
 
 
-def run_commands(
-    mapdl: Mapdl, commands: ApdlCommands
-) -> None:
+def run_commands(mapdl: Mapdl, commands: ApdlCommands) -> None:
     apdl_script = generate_apdl_script(commands)
     do_count = 0
     if_count = 0
+
+    # Some APDL commands require one or more immediately-following "data" lines
+    # (e.g. *VWRITE requires a format line). When streaming line-by-line via
+    # gRPC, flushing between those lines can cause MAPDL to see EOF.
+    vwrite_needs_format = 0
+
     block = ""
 
     for apdl_line in apdl_script.splitlines():
@@ -98,11 +102,9 @@ def run_commands(
         if not line.strip():
             continue
 
-        upper = (
-            line.strip().upper().split("!")[0].strip()
-        )  # 주석 제거 후 판단
+        upper = line.strip().upper().split("!")[0].strip()  # strip inline comments
 
-        # 카운터 업데이트 (block에 추가하기 전)
+        # Counters update (before deciding whether to flush)
         if upper.startswith("*DO"):
             do_count += 1
         elif upper.startswith("*ENDDO"):
@@ -112,16 +114,23 @@ def run_commands(
         elif upper.startswith("*ENDIF"):
             if_count = max(0, if_count - 1)
 
+        # Track commands that require a following format line
+        if upper.startswith("*VWRITE"):
+            vwrite_needs_format = 1
+        elif vwrite_needs_format > 0:
+            # Consume the single format line following *VWRITE
+            vwrite_needs_format -= 1
+
         block += line + "\n"
 
-        # DO/IF 블록 밖에서만 전송
-        if if_count == 0 and do_count == 0:
+        # Only flush when we are not inside DO/IF and not in the middle of a
+        # multi-line command like *VWRITE.
+        if if_count == 0 and do_count == 0 and vwrite_needs_format == 0:
             result = mapdl.input_strings(block)
             block = ""
             if result:
                 print(result)
 
-    # 혹시 남은 블록
     if block.strip():
         result = mapdl.input_strings(block)
         if result:
