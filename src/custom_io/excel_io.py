@@ -664,10 +664,16 @@ def run_postprocess(
     # TODO: make this configurable from Excel once the schema is finalized.
     needed: dict[str, int] = {
         "boundary_force": 9,
+        "boundary_moment": 9,
+        "boundary_traction": 9,
+        "boundary_stress": 6,
     }
 
-    from custom_io.excel_write_long import write_long_rows
+    from custom_io.excel_write_long import upsert_long_rows
     from post.boundary_force_command import extract_boundary_force_rows
+    from post.boundary_moment_command import extract_boundary_moment_rows
+    from post.boundary_traction_command import extract_boundary_traction_rows
+    from post.boundary_stress_command import extract_boundary_stress_rows
     from post.context import PostprocessContext
     from post.row import T_OUT_COLUMNS
 
@@ -743,10 +749,37 @@ def run_postprocess(
                     )
                     all_rows.extend([r.as_dict() for r in rows])
 
+                if "boundary_moment" in allowed_needed:
+                    rows = extract_boundary_moment_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="N*mm",
+                    )
+                    all_rows.extend([r.as_dict() for r in rows])
+
+                if "boundary_traction" in allowed_needed:
+                    rows = extract_boundary_traction_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="MPa",
+                    )
+                    all_rows.extend([r.as_dict() for r in rows])
+
+                if "boundary_stress" in allowed_needed:
+                    rows = extract_boundary_stress_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="MPa",
+                    )
+                    all_rows.extend([r.as_dict() for r in rows])
+
                 _set_status_done(book, status_cell)
 
-        # Write all extracted rows at once.
-        write_long_rows(table=output_table, rows=all_rows, required_columns=T_OUT_COLUMNS)
+        # Upsert extracted rows: overwrite existing keys, append new.
+        upsert_long_rows(table=output_table, rows=all_rows, required_columns=T_OUT_COLUMNS)
 
     except Exception as e:
         print(f"Error: {e}")

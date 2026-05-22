@@ -5,6 +5,9 @@ from collections.abc import Callable
 from core.apdl_commands import ApdlCommands, apdl_command
 from core.parameters.sim_case import SimCase
 from post.boundary_force_command import build_boundary_force_commands_
+from post.boundary_moment_command import build_boundary_moment_commands_
+from post.boundary_traction_command import build_boundary_traction_commands_
+from post.boundary_stress_command import build_boundary_stress_commands_
 from post.context import PostprocessContext
 from post.dependency_resolver import expand_prefixes, topo_sort
 from post.output_dependency import OUTPUT_DEPENDENCIES
@@ -23,10 +26,9 @@ _HANDLERS: dict[str, PostHandler] = {
     "hash": _noop,
     # Implemented in post/
     "boundary_force": build_boundary_force_commands_,
-    # TODO: add remaining handlers as we migrate outputs
-    "boundary_traction": _noop,
-    "boundary_stress": _noop,
-    "boundary_moment": _noop,
+    "boundary_moment": build_boundary_moment_commands_,
+    "boundary_traction": build_boundary_traction_commands_,
+    "boundary_stress": build_boundary_stress_commands_,
     "boundary_modulus": _noop,
     "boundary_modulus_ratio": _noop,
     "effective_youngs_modulus": _noop,
