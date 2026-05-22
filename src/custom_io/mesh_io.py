@@ -159,8 +159,9 @@ def export_mesh_cdb(sim_case: SimCase) -> ApdlCommands:
     #
     # Expected upstream parameters (set during meshing):
     #   - pp_touch_ax, pp_touch_ay, pp_touch_az
-    append_touch_area = apdl_section("APPEND TOUCH AREA METADATA")
-    append_touch_area += apdl_block(
+    append_touch_area: ApdlCommands = (
+        apdl_section("APPEND TOUCH AREA METADATA"),
+    ) + apdl_block(
         f"""
 !*CFOPEN requires filename without quotes; we provide the full path in Fname.
 *CFOPEN,'{fname}','{_MESH_CDB_EXT}',,'APPEND'
