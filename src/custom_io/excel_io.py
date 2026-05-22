@@ -676,6 +676,7 @@ def run_postprocess(
     from post.boundary_stress_command import extract_boundary_stress_rows
     from post.context import PostprocessContext
     from post.row import T_OUT_COLUMNS
+    from post.sim_case_meta import META_COLUMNS
 
     output_table: Table = find_table(book, _OUTPUT_TABLE)
 
@@ -740,6 +741,16 @@ def run_postprocess(
 
                 ctx = PostprocessContext(sim_case=sim_case, needed=allowed_needed)
 
+                from post.sim_case_meta import sim_case_meta
+
+                meta = sim_case_meta(sim_case)
+
+                def _add_rows(rs):
+                    for r in rs:
+                        d = r.as_dict()
+                        d.update(meta)
+                        all_rows.append(d)
+
                 if "boundary_force" in allowed_needed:
                     rows = extract_boundary_force_rows(
                         ctx=ctx,
@@ -747,7 +758,7 @@ def run_postprocess(
                         case_hash=case_hash,
                         unit="N",
                     )
-                    all_rows.extend([r.as_dict() for r in rows])
+                    _add_rows(rows)
 
                 if "boundary_moment" in allowed_needed:
                     rows = extract_boundary_moment_rows(
@@ -756,7 +767,7 @@ def run_postprocess(
                         case_hash=case_hash,
                         unit="N*mm",
                     )
-                    all_rows.extend([r.as_dict() for r in rows])
+                    _add_rows(rows)
 
                 if "boundary_traction" in allowed_needed:
                     rows = extract_boundary_traction_rows(
@@ -765,7 +776,7 @@ def run_postprocess(
                         case_hash=case_hash,
                         unit="MPa",
                     )
-                    all_rows.extend([r.as_dict() for r in rows])
+                    _add_rows(rows)
 
                 if "boundary_stress" in allowed_needed:
                     rows = extract_boundary_stress_rows(
@@ -774,12 +785,16 @@ def run_postprocess(
                         case_hash=case_hash,
                         unit="MPa",
                     )
-                    all_rows.extend([r.as_dict() for r in rows])
+                    _add_rows(rows)
 
                 _set_status_done(book, status_cell)
 
         # Upsert extracted rows: overwrite existing keys, append new.
-        upsert_long_rows(table=output_table, rows=all_rows, required_columns=T_OUT_COLUMNS)
+        upsert_long_rows(
+            table=output_table,
+            rows=all_rows,
+            required_columns=T_OUT_COLUMNS + META_COLUMNS,
+        )
 
     except Exception as e:
         print(f"Error: {e}")
