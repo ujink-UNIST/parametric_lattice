@@ -46,8 +46,7 @@ from post.output_spec import is_post_output_allowed
 from post.pipeline import post_commands
 
 _INPUT_TABLE = "t_input"
-_OUTPUT_TABLE = "t_out"  # long-format output table (preferred)
-_OUTPUT_TABLE_FALLBACK = "t_output"  # legacy name fallback
+_OUTPUT_TABLE = "t_out"  # long-format output table (required)
 _CONFIG_TABLE = "t_config"
 
 # UI: lightweight progress indicator column (outside the t_input table)
@@ -311,10 +310,7 @@ def run_selected_postprocess(
 
     inputs: tuple[SimCase, ...] = _get_simulation_cases(input_header, input_body)
 
-    try:
-        output_table: Table = find_table(book, _OUTPUT_TABLE)
-    except KeyError:
-        output_table = find_table(book, _OUTPUT_TABLE_FALLBACK)
+    output_table: Table = find_table(book, _OUTPUT_TABLE)
 
     # Long-format output does not have 1:1 rows with inputs.
     output_header, _output_body = get_table_data(output_table)
@@ -673,14 +669,11 @@ def run_postprocess(
     from custom_io.excel_write_long import write_long_rows
     from post.boundary_force_command import extract_boundary_force_rows
     from post.context import PostprocessContext
+    from post.row import T_OUT_COLUMNS
 
-    try:
-        output_table: Table = find_table(book, _OUTPUT_TABLE)
-    except KeyError:
-        output_table = find_table(book, _OUTPUT_TABLE_FALLBACK)
+    output_table: Table = find_table(book, _OUTPUT_TABLE)
 
     all_rows: list[dict[str, Any]] = []
-    next_index = 0
 
     # Keep a single MAPDL session open and switch working directory per case.
     session_dir = base_run_dir / "__mapdl_post_session"
@@ -746,16 +739,14 @@ def run_postprocess(
                         ctx=ctx,
                         mapdl=mapdl,
                         case_hash=case_hash,
-                        start_index=next_index,
                         unit="N",
                     )
-                    next_index += len(rows)
                     all_rows.extend([r.as_dict() for r in rows])
 
                 _set_status_done(book, status_cell)
 
         # Write all extracted rows at once.
-        write_long_rows(table=output_table, rows=all_rows)
+        write_long_rows(table=output_table, rows=all_rows, required_columns=T_OUT_COLUMNS)
 
     except Exception as e:
         print(f"Error: {e}")

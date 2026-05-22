@@ -7,36 +7,38 @@ from typing import Any
 
 from xlwings.main import Table
 
-from custom_io.excel_write import _ensure_table_column
+
 
 
 def write_long_rows(
     *,
     table: Table,
     rows: Iterable[Mapping[str, Any]],
+    required_columns: Iterable[str],
 ) -> None:
     """Overwrite the table body with the given sequence of row dicts.
 
-    - Ensures all keys exist as table columns.
-    - Resizes the table to exactly len(rows) body rows.
-    - Writes values in a single 2D block per contiguous column range.
-
-    This is intended for the new long-format t_out.
+    Strict mode: all `required_columns` must already exist in the table header.
+    No columns are auto-created.
     """
 
     row_list = list(rows)
 
-    # Ensure columns exist (and record 0-based indices).
-    all_cols: list[str] = []
-    seen: set[str] = set()
-    for r in row_list:
-        for c in r.keys():
-            c = str(c)
-            if c not in seen:
-                seen.add(c)
-                all_cols.append(c)
+    required = [str(c) for c in required_columns]
 
-    col_indices0 = {c: _ensure_table_column(table, c) - 1 for c in all_cols}
+    header_range = table.header_row_range
+    if header_range is None:
+        raise ValueError("Output table has no header row")
+    header = [str(v).strip() for v in header_range.options(ndim=1).value]
+    header_idx0 = {name: i for i, name in enumerate(header)}
+
+    missing = [c for c in required if c not in header_idx0]
+    if missing:
+        raise KeyError("t_out is missing required column(s): " + ", ".join(missing))
+
+    # Only write required columns (stable order)
+    all_cols = required
+    col_indices0 = {c: header_idx0[c] for c in all_cols}
 
     # Ensure row count.
     api = table.api
@@ -48,18 +50,28 @@ def write_long_rows(
         list_rows.Add()
 
     body = table.data_body_range
-    if body is None or n_rows == 0 or not all_cols:
+    if body is None:
+        return
+    if n_rows == 0:
         return
 
-    # Sort columns by index and write one block.
-    cols_sorted = sorted(col_indices0.items(), key=lambda t: t[1])
-    names = [n for n, _ in cols_sorted]
-    c0 = cols_sorted[0][1]
-    c1 = cols_sorted[-1][1]
+    # Write potentially non-contiguous columns as individual blocks.
+    cols_sorted = sorted(col_indices0.items(), key=lambda t: t[1])  # (name, idx0)
 
-    rng = body[0:n_rows, c0 : c1 + 1]
-    data2d: list[list[Any]] = []
-    for r in row_list:
-        data2d.append([r.get(n) for n in names])
+    # Partition into contiguous blocks
+    blocks: list[list[tuple[str, int]]] = []
+    for name, idx0 in cols_sorted:
+        if not blocks or idx0 != blocks[-1][-1][1] + 1:
+            blocks.append([(name, idx0)])
+        else:
+            blocks[-1].append((name, idx0))
 
-    rng.value = data2d
+    for block in blocks:
+        names = [n for n, _ in block]
+        c0 = block[0][1]
+        c1 = block[-1][1]
+        rng = body[0:n_rows, c0 : c1 + 1]
+        data2d: list[list[Any]] = []
+        for r in row_list:
+            data2d.append([r.get(n) for n in names])
+        rng.value = data2d
