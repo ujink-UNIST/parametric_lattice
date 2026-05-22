@@ -42,14 +42,12 @@ from custom_io.path_config import (
     set_path_config,
 )
 from pipeline import build_pipeline
-from postprocess.output_spec import (
-    POSTPROCESS_OUTPUT_SPEC,
-    is_postprocess_output_allowed,
-)
-from postprocess.pipeline import postprocess_commands
+from post.output_spec import is_post_output_allowed
+from post.pipeline import post_commands
 
 _INPUT_TABLE = "t_input"
-_OUTPUT_TABLE = "t_output"
+_OUTPUT_TABLE = "t_out"  # long-format output table (preferred)
+_OUTPUT_TABLE_FALLBACK = "t_output"  # legacy name fallback
 _CONFIG_TABLE = "t_config"
 
 # UI: lightweight progress indicator column (outside the t_input table)
@@ -313,9 +311,12 @@ def run_selected_postprocess(
 
     inputs: tuple[SimCase, ...] = _get_simulation_cases(input_header, input_body)
 
-    output_table: Table = find_table(book, _OUTPUT_TABLE)
-    # Ensure output has the same number of rows as inputs so row_idx lookups are valid.
-    _ensure_table_rows(output_table, len(inputs))
+    try:
+        output_table: Table = find_table(book, _OUTPUT_TABLE)
+    except KeyError:
+        output_table = find_table(book, _OUTPUT_TABLE_FALLBACK)
+
+    # Long-format output does not have 1:1 rows with inputs.
     output_header, _output_body = get_table_data(output_table)
 
     if selected_indices is None:
@@ -645,75 +646,50 @@ def run_postprocess(
     inputs: tuple[SimCase, ...],
     output_header: Header,
 ) -> None:
-    """Run postprocessing for the given cases.
+    """Run postprocessing for the given cases (long-format t_out).
 
-    This derives required outputs from the Excel `t_output` header and validates
-    them against `POSTPROCESS_OUTPUT_SPEC`.
+    Output table is expected to be named `t_out` (preferred) or `t_output`.
 
-    The derived mapping is `prefix -> n_components` where `n_components` must be
-    one of {1,3,6,9}.
+    Extraction produces a flat list of :class:`post.row.TOutRow` and writes them
+    into the output table with columns:
+      index, hash, category, metric, component, value, unit
+
+    NOTE: `output_header` is accepted for backward compatibility with call sites
+    but is not used.
     """
+
+    _ = output_header
 
     cfg = get_path_config()
     base_run_dir = cfg.results_root / "case"
     case_artifacts_root = cfg.artifacts_root / "case"
 
-    needed: dict[str, int] = {}
-    component_sets: dict[str, set[str]] = {}
+    # Requested output prefixes for the new long-format pipeline.
+    # TODO: make this configurable from Excel once the schema is finalized.
+    needed: dict[str, int] = {
+        "boundary_force": 9,
+    }
 
-    for col in output_header:
-        name = str(col).strip()
-        if not name:
-            continue
+    from custom_io.excel_write_long import write_long_rows
+    from post.boundary_force_command import extract_boundary_force_rows
+    from post.context import PostprocessContext
 
-        if "_" in name:
-            prefix, suffix = name.rsplit("_", 1)
-            if suffix in _DIR_COMPONENTS:
-                component_sets.setdefault(prefix, set()).add(suffix)
-                continue
+    try:
+        output_table: Table = find_table(book, _OUTPUT_TABLE)
+    except KeyError:
+        output_table = find_table(book, _OUTPUT_TABLE_FALLBACK)
 
-        # Scalar output column
-        needed[name] = 1
-
-    for prefix, comps in component_sets.items():
-        needed[prefix] = len(comps)
-
-    # Validate against the postprocess output spec.
-    for prefix, n in needed.items():
-        expected = POSTPROCESS_OUTPUT_SPEC.get(prefix)
-        if expected is None:
-            raise KeyError(
-                f"t_output requests unknown postprocess prefix {prefix!r}. "
-                f"Add it to POSTPROCESS_OUTPUT_SPEC (src/postprocess/output_spec.py)."
-            )
-        if expected != n:
-            raise ValueError(
-                f"t_output prefix {prefix!r} has {n} components, but spec requires {expected}."
-            )
-
-    # Ensure required scalar columns exist.
-    for req in ("index", "hash"):
-        if req not in needed:
-            raise ValueError(f"t_output is missing required scalar column {req!r}.")
-
-    # Prepare output table writer.
-    from custom_io.excel_write import WriteQueue
-
-    output_table: Table = find_table(book, _OUTPUT_TABLE)
-    q = WriteQueue()
+    all_rows: list[dict[str, Any]] = []
+    next_index = 0
 
     # Keep a single MAPDL session open and switch working directory per case.
-    session_dir = base_run_dir / "__mapdl_postprocess_session"
+    session_dir = base_run_dir / "__mapdl_post_session"
     session_dir.mkdir(parents=True, exist_ok=True)
     jobname = "case"
 
     try:
-        # Mark all selected rows as pending up-front.
         for sim_case in inputs:
-            _set_status_pending(
-                book,
-                _status_range_for_input_row(book, int(sim_case.row_idx)),
-            )
+            _set_status_pending(book, _status_range_for_input_row(book, int(sim_case.row_idx)))
 
         with mapdl_session(
             run_location=str(session_dir),
@@ -721,108 +697,21 @@ def run_postprocess(
             cleanup_on_exit=False,
             nproc=getattr(cfg, "nproc", None),
         ) as mapdl:
-            # Run per-case postprocess APDL and queue requested results.
             for sim_case in inputs:
                 status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
                 _set_status_running(book, status_cell)
 
-                # Validate postprocess outputs against this case's simulation_type.
-                # Policy: run MAPDL postprocess for outputs that are allowed for
-                # this simulation_type, and write #N/A (=NA()) for disallowed
-                # outputs.
-                sim_type = sim_case.post_mesh_spec.setup.sim_type
-
+                sim_type = str(sim_case.post_mesh_spec.setup.sim_type)
                 allowed_needed: dict[str, int] = {
-                    p: n
-                    for p, n in needed.items()
-                    if is_postprocess_output_allowed(p, sim_type)
+                    p: n for p, n in needed.items() if is_post_output_allowed(p, sim_type)
                 }
-                disallowed = [p for p in needed.keys() if p not in allowed_needed]
-
-                from custom_io.excel_write import EXCEL_NA
-
-                row0 = int(sim_case.row_idx)
-
-                # Always write required scalars.
-                case_key = sim_case.to_string()
-                case_hash = build_case_hash(case_key)
-                if "index" in needed:
-                    q.add_int(row0, "index", row0 + 1)
-                if "hash" in needed:
-                    q.add_str(row0, "hash", case_hash)
-
-                # Write #N/A for unsupported outputs.
-                for p in disallowed:
-                    ncomp = needed.get(p, 1)
-                    if ncomp == 1:
-                        q.add_float(row0, p, EXCEL_NA)
-                    elif ncomp == 3:
-                        # Could be X/Y/Z or XY/YZ/XZ depending on the prefix.
-                        if p == "effective_shear_modulus":
-                            q.add_values(
-                                row0,
-                                {
-                                    f"{p}_XY": EXCEL_NA,
-                                    f"{p}_YZ": EXCEL_NA,
-                                    f"{p}_XZ": EXCEL_NA,
-                                },
-                            )
-                        else:
-                            q.add_values(
-                                row0,
-                                {
-                                    f"{p}_X": EXCEL_NA,
-                                    f"{p}_Y": EXCEL_NA,
-                                    f"{p}_Z": EXCEL_NA,
-                                },
-                            )
-                    elif ncomp == 6:
-                        q.add_values(
-                            row0,
-                            {
-                                f"{p}_X": EXCEL_NA,
-                                f"{p}_Y": EXCEL_NA,
-                                f"{p}_Z": EXCEL_NA,
-                                f"{p}_XY": EXCEL_NA,
-                                f"{p}_YZ": EXCEL_NA,
-                                f"{p}_XZ": EXCEL_NA,
-                            },
-                        )
-                    elif ncomp == 9:
-                        q.add_values(
-                            row0,
-                            {
-                                f"{p}_XX": EXCEL_NA,
-                                f"{p}_XY": EXCEL_NA,
-                                f"{p}_XZ": EXCEL_NA,
-                                f"{p}_YX": EXCEL_NA,
-                                f"{p}_YY": EXCEL_NA,
-                                f"{p}_YZ": EXCEL_NA,
-                                f"{p}_ZX": EXCEL_NA,
-                                f"{p}_ZY": EXCEL_NA,
-                                f"{p}_ZZ": EXCEL_NA,
-                            },
-                        )
-                    else:
-                        # For any future component counts, fall back to scalar #N/A.
-                        q.add_float(row0, p, EXCEL_NA)
-
-                # If nothing beyond index/hash is allowed, just flush the N/A
-                # values and move on.
-                nontrivial_allowed = [
-                    p for p in allowed_needed.keys() if p not in ("index", "hash")
-                ]
-                if not nontrivial_allowed:
-                    q.flush(output_table)
+                if not allowed_needed:
                     _set_status_done(book, status_cell)
                     continue
 
-                case_key = sim_case.to_string()
-                case_hash = build_case_hash(case_key)
+                case_hash = build_case_hash(sim_case.to_string())
                 run_dir = base_run_dir / f"{case_hash}"
 
-                # Switch to the case working directory, restore DB, attach RST.
-                # This avoids restarting MAPDL for each postprocess run.
                 prelude = (
                     f"/CWD,'{run_dir.as_posix()}'",
                     "FINISH",
@@ -831,16 +720,12 @@ def run_postprocess(
                 )
                 run_commands(mapdl, prelude)
 
-                pipeline = postprocess_commands(
-                    sim_case=sim_case,
-                    needed=allowed_needed,
-                )
+                pipeline = post_commands(sim_case=sim_case, needed=allowed_needed)
 
-                # Save full postprocess command stream for reproducibility.
                 write_apdl_macro(
                     case_artifacts_root / case_hash / "post.mac",
                     prelude + pipeline,
-                    title="postprocess",
+                    title="post",
                     metadata={
                         "case_hash": case_hash,
                         "jobname": jobname,
@@ -854,384 +739,27 @@ def run_postprocess(
                     _set_status_fail(book, status_cell)
                     raise
 
-                _set_status_done(book, status_cell)
-
-                # Queue outputs
-                row0 = int(sim_case.row_idx)
-
-                if "index" in allowed_needed:
-                    q.add_int(row0, "index", row0 + 1)
-
-                if "hash" in allowed_needed:
-                    q.add_str(row0, "hash", case_hash)
-
-                if "volume" in allowed_needed:
-                    q.add_float(row0, "volume", mapdl.parameters["pp_volume"])
-
-                if "boundary_traction" in allowed_needed:
-                    q.add_Vector3x3(
-                        row0,
-                        "boundary_traction",
-                        mapdl.parameters["pp_boundary_traction"],
-                    )
+                ctx = PostprocessContext(sim_case=sim_case, needed=allowed_needed)
 
                 if "boundary_force" in allowed_needed:
-                    q.add_Vector3x3(
-                        row0,
-                        "boundary_force",
-                        mapdl.parameters["pp_boundary_force"],
+                    rows = extract_boundary_force_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        start_index=next_index,
+                        unit="N",
                     )
+                    next_index += len(rows)
+                    all_rows.extend([r.as_dict() for r in rows])
 
-                if "boundary_moment" in allowed_needed:
-                    q.add_Vector3x3(
-                        row0,
-                        "boundary_moment",
-                        mapdl.parameters["pp_boundary_moment"],
-                    )
+                _set_status_done(book, status_cell)
 
-                if "boundary_stress" in allowed_needed:
-                    q.add_Vector6(
-                        row0,
-                        "boundary_stress",
-                        mapdl.parameters["pp_boundary_stress"],
-                    )
+        # Write all extracted rows at once.
+        write_long_rows(table=output_table, rows=all_rows)
 
-                if (
-                    "boundary_modulus" in allowed_needed
-                    or "boundary_modulus_ratio" in allowed_needed
-                    or "effective_youngs_modulus" in allowed_needed
-                    or "effective_shear_modulus" in allowed_needed
-                ):
-                    # boundary_modulus = boundary_stress / ε
-                    eps = float(sim_case.post_mesh_spec.setup.strain)
-                    E = float(sim_case.post_mesh_spec.material.e_mod)
-                    sim_type = str(sim_case.post_mesh_spec.setup.sim_type).strip().lower()
-
-                    from custom_io.excel_write import EXCEL_NA
-
-                    if eps == 0.0:
-                        # All derived quantities undefined when ε=0.
-                        if "boundary_modulus" in allowed_needed:
-                            q.add_values(
-                                row0,
-                                {
-                                    "boundary_modulus_X": EXCEL_NA,
-                                    "boundary_modulus_Y": EXCEL_NA,
-                                    "boundary_modulus_Z": EXCEL_NA,
-                                    "boundary_modulus_XY": EXCEL_NA,
-                                    "boundary_modulus_YZ": EXCEL_NA,
-                                    "boundary_modulus_XZ": EXCEL_NA,
-                                },
-                            )
-                        if "boundary_modulus_ratio" in allowed_needed:
-                            q.add_values(
-                                row0,
-                                {
-                                    "boundary_modulus_ratio_X": EXCEL_NA,
-                                    "boundary_modulus_ratio_Y": EXCEL_NA,
-                                    "boundary_modulus_ratio_Z": EXCEL_NA,
-                                    "boundary_modulus_ratio_XY": EXCEL_NA,
-                                    "boundary_modulus_ratio_YZ": EXCEL_NA,
-                                    "boundary_modulus_ratio_XZ": EXCEL_NA,
-                                },
-                            )
-                        if "effective_youngs_modulus" in allowed_needed:
-                            q.add_values(
-                                row0,
-                                {
-                                    "effective_youngs_modulus_X": EXCEL_NA,
-                                    "effective_youngs_modulus_Y": EXCEL_NA,
-                                    "effective_youngs_modulus_Z": EXCEL_NA,
-                                },
-                            )
-                        if "effective_shear_modulus" in allowed_needed:
-                            q.add_values(
-                                row0,
-                                {
-                                    "effective_shear_modulus_XY": EXCEL_NA,
-                                    "effective_shear_modulus_YZ": EXCEL_NA,
-                                    "effective_shear_modulus_XZ": EXCEL_NA,
-                                },
-                            )
-                    else:
-                        bs = mapdl.parameters["pp_boundary_stress"]
-                        bs6 = np.asarray(bs, dtype=float).reshape(-1)
-                        mod6 = bs6 / eps
-
-                        if "boundary_modulus" in allowed_needed:
-                            q.add_Vector6(row0, "boundary_modulus", mod6)
-
-                        if "boundary_modulus_ratio" in allowed_needed:
-                            if E == 0.0:
-                                q.add_values(
-                                    row0,
-                                    {
-                                        "boundary_modulus_ratio_X": EXCEL_NA,
-                                        "boundary_modulus_ratio_Y": EXCEL_NA,
-                                        "boundary_modulus_ratio_Z": EXCEL_NA,
-                                        "boundary_modulus_ratio_XY": EXCEL_NA,
-                                        "boundary_modulus_ratio_YZ": EXCEL_NA,
-                                        "boundary_modulus_ratio_XZ": EXCEL_NA,
-                                    },
-                                )
-                            else:
-                                q.add_Vector6(row0, "boundary_modulus_ratio", mod6 / E)
-
-                        if "effective_youngs_modulus" in allowed_needed:
-                            # Vector3: only one component is populated per case.
-                            vals = {
-                                "effective_youngs_modulus_X": EXCEL_NA,
-                                "effective_youngs_modulus_Y": EXCEL_NA,
-                                "effective_youngs_modulus_Z": EXCEL_NA,
-                            }
-                            if sim_type == "xx":
-                                vals["effective_youngs_modulus_X"] = float(mod6[0])
-                            elif sim_type == "yy":
-                                vals["effective_youngs_modulus_Y"] = float(mod6[1])
-                            elif sim_type == "zz":
-                                vals["effective_youngs_modulus_Z"] = float(mod6[2])
-                            q.add_values(row0, vals)
-
-                        if "effective_shear_modulus" in allowed_needed:
-                            # Shear modulus uses σ_ij = 2 G ε_ij (tensor shear strain).
-                            vals = {
-                                "effective_shear_modulus_XY": EXCEL_NA,
-                                "effective_shear_modulus_YZ": EXCEL_NA,
-                                "effective_shear_modulus_XZ": EXCEL_NA,
-                            }
-                            if sim_type == "xy":
-                                vals["effective_shear_modulus_XY"] = float(mod6[3]) / 2.0
-                            elif sim_type == "yz":
-                                vals["effective_shear_modulus_YZ"] = float(mod6[4]) / 2.0
-                            elif sim_type == "xz":
-                                vals["effective_shear_modulus_XZ"] = float(mod6[5]) / 2.0
-                            q.add_values(row0, vals)
-
-                if "volume_stress" in allowed_needed:
-                    q.add_Vector6(
-                        row0,
-                        "volume_stress",
-                        mapdl.parameters["pp_volume_stress"],
-                    )
-
-                if "volume_avg_stress" in allowed_needed:
-                    vol = float(mapdl.parameters["pp_volume"])
-                    vs = mapdl.parameters["pp_volume_stress"]
-                    if hasattr(vs, "ravel"):
-                        vs6 = [float(x) for x in vs.ravel().tolist()]
-                    else:
-                        vs6 = [float(x) for x in vs]
-
-                    if vol == 0.0:
-                        avg6 = [float("nan")] * 6
-                    else:
-                        avg6 = [x / vol for x in vs6]
-
-                    q.add_Vector6(
-                        row0,
-                        "volume_avg_stress",
-                        np.asarray(avg6, dtype=float),
-                    )
-
-                if "volume_energy" in allowed_needed:
-                    q.add_float(
-                        row0, "volume_energy", mapdl.parameters["pp_volume_energy"]
-                    )
-
-                if "volume_avg_energy" in allowed_needed:
-                    vol = float(mapdl.parameters["pp_volume"])
-                    ve = float(mapdl.parameters["pp_volume_energy"])
-                    if vol == 0.0:
-                        q.add_float(row0, "volume_avg_energy", float("nan"))
-                    else:
-                        q.add_float(row0, "volume_avg_energy", ve / vol)
-
-                # Mesh-derived boundary touch area (solid-only assumption)
-                # Also used internally for contact_traction/contact_stress.
-                touch_area: tuple[float, float, float] | None = None
-                touch_area_ok = False
-                if (
-                    "boundary_touch_area" in allowed_needed
-                    or "boundary_touch_area_ratio" in allowed_needed
-                    or "contact_traction" in allowed_needed
-                    or "contact_stress" in allowed_needed
-                ):
-                    from custom_io.boundary_touch_area import compute_boundary_touch_area_from_cdb
-                    from custom_io.mesh_io import mesh_db_dir
-                    from custom_io.excel_write import EXCEL_NA
-
-                    cdb_path = mesh_db_dir(sim_case) / "mesh.cdb"
-                    tol = 1e-6 * float(sim_case.pre_mesh_spec.meshing.max_element_size)
-                    try:
-                        res = compute_boundary_touch_area_from_cdb(
-                            cdb_path=cdb_path,
-                            size_xyz=sim_case.pre_mesh_spec.geometry.size,
-                            tol=tol,
-                        )
-                        touch_area = (float(res.ax), float(res.ay), float(res.az))
-                        touch_area_ok = all(a > 0.0 for a in touch_area)
-
-                        if "boundary_touch_area" in allowed_needed:
-                            q.add_values(
-                                row0,
-                                {
-                                    "boundary_touch_area_X": touch_area[0],
-                                    "boundary_touch_area_Y": touch_area[1],
-                                    "boundary_touch_area_Z": touch_area[2],
-                                },
-                            )
-
-                        if "boundary_touch_area_ratio" in allowed_needed:
-                            sx, sy, sz = (float(x) for x in sim_case.pre_mesh_spec.geometry.size)
-                            ax_full = sy * sz
-                            ay_full = sx * sz
-                            az_full = sx * sy
-
-                            def _ratio(a_touch: float, a_full: float):
-                                return EXCEL_NA if a_full == 0.0 else (a_touch / a_full)
-
-                            q.add_values(
-                                row0,
-                                {
-                                    "boundary_touch_area_ratio_X": _ratio(touch_area[0], ax_full),
-                                    "boundary_touch_area_ratio_Y": _ratio(touch_area[1], ay_full),
-                                    "boundary_touch_area_ratio_Z": _ratio(touch_area[2], az_full),
-                                },
-                            )
-                    except Exception:
-                        touch_area = None
-                        touch_area_ok = False
-                        if "boundary_touch_area" in allowed_needed:
-                            q.add_values(
-                                row0,
-                                {
-                                    "boundary_touch_area_X": EXCEL_NA,
-                                    "boundary_touch_area_Y": EXCEL_NA,
-                                    "boundary_touch_area_Z": EXCEL_NA,
-                                },
-                            )
-                        if "boundary_touch_area_ratio" in allowed_needed:
-                            q.add_values(
-                                row0,
-                                {
-                                    "boundary_touch_area_ratio_X": EXCEL_NA,
-                                    "boundary_touch_area_ratio_Y": EXCEL_NA,
-                                    "boundary_touch_area_ratio_Z": EXCEL_NA,
-                                },
-                            )
-
-                # Contact traction/stress (boundary_force normalized by touch area)
-                if "contact_traction" in allowed_needed or "contact_stress" in allowed_needed:
-                    from custom_io.excel_write import EXCEL_NA
-
-                    if not touch_area_ok or touch_area is None:
-                        if "contact_traction" in allowed_needed:
-                            q.add_values(
-                                row0,
-                                {
-                                    "contact_traction_XX": EXCEL_NA,
-                                    "contact_traction_XY": EXCEL_NA,
-                                    "contact_traction_XZ": EXCEL_NA,
-                                    "contact_traction_YX": EXCEL_NA,
-                                    "contact_traction_YY": EXCEL_NA,
-                                    "contact_traction_YZ": EXCEL_NA,
-                                    "contact_traction_ZX": EXCEL_NA,
-                                    "contact_traction_ZY": EXCEL_NA,
-                                    "contact_traction_ZZ": EXCEL_NA,
-                                },
-                            )
-                        if "contact_stress" in allowed_needed:
-                            q.add_values(
-                                row0,
-                                {
-                                    "contact_stress_X": EXCEL_NA,
-                                    "contact_stress_Y": EXCEL_NA,
-                                    "contact_stress_Z": EXCEL_NA,
-                                    "contact_stress_XY": EXCEL_NA,
-                                    "contact_stress_YZ": EXCEL_NA,
-                                    "contact_stress_XZ": EXCEL_NA,
-                                },
-                            )
-                    else:
-                        # pp_boundary_force is (3,3): rows X/Y/Z faces, cols X/Y/Z components.
-                        bf = np.asarray(mapdl.parameters["pp_boundary_force"], dtype=float).reshape(3, 3)
-                        ax, ay, az = touch_area
-                        ct = np.zeros((3, 3), dtype=float)
-                        # Normalize each face-row by the touch area of that axis.
-                        ct[0, :] = bf[0, :] / ax
-                        ct[1, :] = bf[1, :] / ay
-                        ct[2, :] = bf[2, :] / az
-
-                        if "contact_traction" in allowed_needed:
-                            q.add_values(
-                                row0,
-                                {
-                                    "contact_traction_XX": float(ct[0, 0]),
-                                    "contact_traction_XY": float(ct[0, 1]),
-                                    "contact_traction_XZ": float(ct[0, 2]),
-                                    "contact_traction_YX": float(ct[1, 0]),
-                                    "contact_traction_YY": float(ct[1, 1]),
-                                    "contact_traction_YZ": float(ct[1, 2]),
-                                    "contact_traction_ZX": float(ct[2, 0]),
-                                    "contact_traction_ZY": float(ct[2, 1]),
-                                    "contact_traction_ZZ": float(ct[2, 2]),
-                                },
-                            )
-
-                        if "contact_stress" in allowed_needed:
-                            # Symmetric Voigt [X,Y,Z,XY,YZ,XZ] from traction matrix.
-                            sxx = ct[0, 0]
-                            syy = ct[1, 1]
-                            szz = ct[2, 2]
-                            sxy = 0.5 * (ct[0, 1] + ct[1, 0])
-                            syz = 0.5 * (ct[1, 2] + ct[2, 1])
-                            sxz = 0.5 * (ct[0, 2] + ct[2, 0])
-                            q.add_values(
-                                row0,
-                                {
-                                    "contact_stress_X": float(sxx),
-                                    "contact_stress_Y": float(syy),
-                                    "contact_stress_Z": float(szz),
-                                    "contact_stress_XY": float(sxy),
-                                    "contact_stress_YZ": float(syz),
-                                    "contact_stress_XZ": float(sxz),
-                                },
-                            )
-
-                # Modal outputs (mode 1..20)
-                for i in range(1, 21):
-                    key = f"res_freq_{i}"
-                    if key in allowed_needed:
-                        q.add_float(row0, key, mapdl.parameters[f"pp_res_freq_{i}"])
-
-                    key = f"part_factor_{i}"
-                    if key in allowed_needed:
-                        q.add_values(
-                            row0,
-                            {
-                                f"{key}_X": float(mapdl.parameters[f"pp_part_factor_{i}_X"]),
-                                f"{key}_Y": float(mapdl.parameters[f"pp_part_factor_{i}_Y"]),
-                                f"{key}_Z": float(mapdl.parameters[f"pp_part_factor_{i}_Z"]),
-                            },
-                        )
-
-                    key = f"eff_modal_mass_{i}"
-                    if key in allowed_needed:
-                        q.add_values(
-                            row0,
-                            {
-                                f"{key}_X": float(mapdl.parameters[f"pp_eff_modal_mass_{i}_X"]),
-                                f"{key}_Y": float(mapdl.parameters[f"pp_eff_modal_mass_{i}_Y"]),
-                                f"{key}_Z": float(mapdl.parameters[f"pp_eff_modal_mass_{i}_Z"]),
-                            },
-                        )
-
-                q.flush(output_table)
     except Exception as e:
         print(f"Error: {e}")
         raise
-
-    # Note: we flush after each case for more responsive Excel updates.
 
 
 def build_case_hash(key: str) -> str:
