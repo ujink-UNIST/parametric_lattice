@@ -1,23 +1,15 @@
 # excel_io.py
 
-from dataclasses import fields, is_dataclass
-import hashlib
 import json
+from contextlib import suppress
 from pathlib import Path
-from typing import (
-    Any,
-    Dict,
-    List,
-    Protocol,
-    Tuple,
-    Type,
-    TypeVar,
-    cast,
-)
+from typing import Any, Protocol, TypeVar
 
-import xlwings as xw
 import numpy as np
-from xlwings.main import Table
+import xlwings as xw  # type: ignore[import-not-found]
+from xlwings.main import Table  # type: ignore[import-not-found]
+
+from core.hashing import sha1_hex
 
 from core.parameters.element_type_params import (
     ElementTypeParams,
@@ -34,23 +26,127 @@ from core.parameters.sim_case import (
     PreMeshSpec,
     SimCase,
 )
-from custom_io.apdl_io import mapdl_session, run_commands
+from custom_io.apdl_io import mapdl_session, run_commands, write_apdl_macro
 from custom_io.excel_read import (
     read_float,
     read_int,
-    read_optional_bool,
     read_optional_float,
     read_str,
     read_Vector3,
 )
 from custom_io.lgf_io import resolve_cell_name
-from custom_io.socket_io import choose_free_port
+from custom_io.path_config import (
+    PathConfig,
+    default_config,
+    get_path_config,
+    set_path_config,
+)
 from pipeline import build_pipeline
-from postprocess.output_spec import POSTPROCESS_OUTPUT_SPEC
-from postprocess.pipeline import postprocess_commands
+from post.output_spec import is_post_output_allowed
+from post.pipeline import post_commands
 
 _INPUT_TABLE = "t_input"
-_OUTPUT_TABLE = "t_output"
+_OUTPUT_TABLE = "t_out"  # long-format output table (preferred)
+_OUTPUT_TABLE_FALLBACK = "t_output"  # legacy name fallback
+_CONFIG_TABLE = "t_config"
+
+# UI: lightweight progress indicator column (outside the t_input table)
+# For a running case at table body row i, we write to e.g. A{excel_row}.
+_STATUS_COL = "A"
+_PENDING_MARK = "…"
+_DONE_MARK = "✔"
+_FAIL_MARK = "✘"
+_SKIP_MARK = "➥"
+
+# Status cell styling (RGB)
+_PENDING_COLOR = (235, 235, 235)  # light gray
+_RUNNING_COLOR = (255, 242, 204)  # light yellow
+_DONE_COLOR = (198, 239, 206)  # light green
+_FAIL_COLOR = (255, 199, 206)  # light red
+_SKIP_COLOR = (221, 235, 247)  # light blue
+
+# Status font colors (RGB)
+_PENDING_FONT = (90, 90, 90)  # dark gray
+_RUNNING_FONT = (156, 101, 0)  # dark orange/brown
+_DONE_FONT = (0, 97, 0)  # dark green
+_FAIL_FONT = (156, 0, 6)  # dark red
+_SKIP_FONT = (31, 78, 121)  # dark blue
+
+
+def _doevents(book: xw.Book) -> None:
+    """Let Excel process UI events (best-effort).
+
+    This helps Excel repaint the sheet after .value updates.
+    """
+
+    with suppress(Exception):
+        book.app.api.Run("DoEvents")
+
+
+def _rgb_to_excel_color(rgb: tuple[int, int, int]) -> int:
+    """Convert (R,G,B) to Excel/VBA Color integer (BGR)."""
+
+    r, g, b = (int(rgb[0]), int(rgb[1]), int(rgb[2]))
+    return (b << 16) | (g << 8) | r
+
+
+def _style_status_cell(
+    cell: xw.Range,
+    *,
+    fill_rgb: tuple[int, int, int],
+    font_rgb: tuple[int, int, int] | None = None,
+    bold: bool = False,
+) -> None:
+    with suppress(Exception):
+        cell.color = fill_rgb
+    with suppress(Exception):
+        if font_rgb is not None:
+            cell.api.Font.Color = _rgb_to_excel_color(font_rgb)
+    with suppress(Exception):
+        cell.api.Font.Bold = bool(bold)
+    with suppress(Exception):
+        cell.api.HorizontalAlignment = -4108  # xlCenter
+
+
+def _set_status_pending(book: xw.Book, cell: xw.Range | None) -> None:
+    if cell is None:
+        return
+    cell.value = _PENDING_MARK
+    _style_status_cell(cell, fill_rgb=_PENDING_COLOR, font_rgb=_PENDING_FONT, bold=True)
+    _doevents(book)
+
+
+def _set_status_running(book: xw.Book, cell: xw.Range | None) -> None:
+    if cell is None:
+        return
+    # Mirror the global spinner cell (Sheet1!A1) while this case runs.
+    cell.formula = "=Sheet1!$A$1"
+    _style_status_cell(cell, fill_rgb=_RUNNING_COLOR, font_rgb=_RUNNING_FONT)
+    _doevents(book)
+
+
+def _set_status_done(book: xw.Book, cell: xw.Range | None) -> None:
+    if cell is None:
+        return
+    cell.value = _DONE_MARK
+    _style_status_cell(cell, fill_rgb=_DONE_COLOR, font_rgb=_DONE_FONT)
+    _doevents(book)
+
+
+def _set_status_fail(book: xw.Book, cell: xw.Range | None) -> None:
+    if cell is None:
+        return
+    cell.value = _FAIL_MARK
+    _style_status_cell(cell, fill_rgb=_FAIL_COLOR, font_rgb=_FAIL_FONT)
+    _doevents(book)
+
+
+def _set_status_skip(book: xw.Book, cell: xw.Range | None) -> None:
+    if cell is None:
+        return
+    cell.value = _SKIP_MARK
+    _style_status_cell(cell, fill_rgb=_SKIP_COLOR, font_rgb=_SKIP_FONT)
+    _doevents(book)
 
 
 class DataclassType(Protocol):
@@ -68,6 +164,94 @@ Header = tuple[str, ...]
 Body = tuple[tuple[Any, ...], ...]
 
 
+def _apply_path_config_from_book(book: xw.Book) -> None:
+    """Apply runtime path config from Excel `t_config` (if present).
+
+    We interpret values *as-is* (no '~' expansion). If a value is provided, it
+    must be an absolute path.
+
+    Expected columns in `t_config` (first row is used):
+      - lgf
+      - artifacts
+      - results
+      - compute_policy  (cache|recompute|smart)
+      - n_proc          (optional int, MAPDL -np)
+
+    Missing table/columns/cells fall back to repo defaults.
+    """
+
+    repo_root = Path(__file__).resolve().parents[2]
+    cfg = default_config(repo_root)
+
+    try:
+        table = find_table(book, _CONFIG_TABLE)
+    except KeyError:
+        set_path_config(cfg)
+        return
+
+    header, body = get_table_data(table)
+    if not body:
+        set_path_config(cfg)
+        return
+
+    row0 = body[0]
+    col_index = {str(h).strip().lower(): i for i, h in enumerate(header)}
+
+    def read_abs(col: str) -> Path | None:
+        i = col_index.get(col)
+        if i is None or i >= len(row0):
+            return None
+        v = row0[i]
+        if v is None:
+            return None
+        s = str(v).strip()
+        if not s:
+            return None
+        p = Path(s)
+        if not p.is_absolute():
+            raise ValueError(f"t_config.{col} must be an absolute path (got {s!r})")
+        return p
+
+    lgf_root = read_abs("lgf") or cfg.lgf_root
+    artifacts_root = read_abs("artifacts") or cfg.artifacts_root
+    results_root = read_abs("results") or cfg.results_root
+
+    compute_policy_raw = "smart"
+    i_pol = col_index.get("compute_policy")
+    if i_pol is not None and i_pol < len(row0):
+        v = row0[i_pol]
+        if v is not None and str(v).strip():
+            compute_policy_raw = str(v).strip().lower()
+
+    if compute_policy_raw not in {"cache", "recompute", "smart"}:
+        raise ValueError(
+            f"t_config.compute_policy must be one of cache/recompute/smart (got {compute_policy_raw!r})"
+        )
+
+    nproc: int | None = None
+    i_np = col_index.get("n_proc")
+    if i_np is not None and i_np < len(row0):
+        v = row0[i_np]
+        if v is not None and str(v).strip():
+            try:
+                nproc = int(float(v))
+            except Exception as e:
+                raise ValueError(f"t_config.n_proc must be an int (got {v!r})") from e
+            if nproc <= 0:
+                raise ValueError(f"t_config.n_proc must be positive (got {nproc})")
+
+    set_path_config(
+        PathConfig(
+            repo_root=cfg.repo_root,
+            lgf_root=lgf_root,
+            artifacts_root=artifacts_root,
+            results_root=results_root,
+            compute_policy=compute_policy_raw,
+            nproc=nproc,
+        )
+    )
+
+
 def run_selected(
     book: xw.Book,
     selected_indices: tuple[int, ...] | None = None,
@@ -81,10 +265,12 @@ def run_selected(
             - tuple[int, ...]: run only those cases
     """
 
+    _apply_path_config_from_book(book)
+
     input_table: Table = find_table(book, _INPUT_TABLE)
     input_header, input_body = get_table_data(input_table)
 
-    inputs: Tuple[SimCase, ...] = _get_simulation_cases(input_header, input_body)
+    inputs: tuple[SimCase, ...] = _get_simulation_cases(input_header, input_body)
 
     hashes = [build_case_hash(sc.to_string()) for sc in inputs]
 
@@ -98,7 +284,9 @@ def run_selected(
     )
 
     if selected_indices is None:
-        run_cases(inputs)
+        # When running from Excel, we want intermediate artifacts (geometry_db,
+        # mesh_db, lattice JSON, etc.) for debugging/reuse.
+        run_cases(book, inputs, save_intermediate=True)
         return
 
     selected: list[SimCase] = []
@@ -107,30 +295,29 @@ def run_selected(
         if i in selected_set:
             selected.append(sim_case)
 
-    run_cases(tuple(selected))
+    # When running from Excel, we want intermediate artifacts (geometry_db,
+    # mesh_db, lattice JSON, etc.) for debugging/reuse.
+    run_cases(book, tuple(selected), save_intermediate=True)
 
 
 def run_selected_postprocess(
     book: xw.Book,
     selected_indices: tuple[int, ...] | None = None,
 ) -> None:
+    _apply_path_config_from_book(book)
+
     input_table: Table = find_table(book, _INPUT_TABLE)
     input_header, input_body = get_table_data(input_table)
 
-    inputs: Tuple[SimCase, ...] = _get_simulation_cases(input_header, input_body)
+    inputs: tuple[SimCase, ...] = _get_simulation_cases(input_header, input_body)
 
-    hashes = [build_case_hash(sc.to_string()) for sc in inputs]
+    try:
+        output_table: Table = find_table(book, _OUTPUT_TABLE)
+    except KeyError:
+        output_table = find_table(book, _OUTPUT_TABLE_FALLBACK)
 
-    output_table: Table = find_table(book, _OUTPUT_TABLE)
-    output_header, output_body = get_table_data(output_table)
-
-    _write_index_hash_to_output_table(
-        book,
-        inputs,
-        hashes,
-        selected_indices=selected_indices,
-        table_key=_OUTPUT_TABLE,
-    )
+    # Long-format output does not have 1:1 rows with inputs.
+    output_header, _output_body = get_table_data(output_table)
 
     if selected_indices is None:
         run_postprocess(book, inputs, output_header)
@@ -193,179 +380,390 @@ def selected_input_indices(
     return tuple(sorted(idxs)) if idxs else None
 
 
+def _read_json(path: Path) -> dict[str, Any] | None:
+    with suppress(Exception):
+        return json.loads(path.read_text(encoding="utf-8"))
+    return None
+
+
+def _meta_matches(
+    path: Path, *, key_field: str, hash_field: str, key: str, h: str
+) -> bool:
+    meta = _read_json(path)
+    if not isinstance(meta, dict):
+        return False
+    return str(meta.get(key_field, "")) == key and str(meta.get(hash_field, "")) == h
+
+
+def _is_case_solved(
+    *,
+    run_dir: Path,
+    case_meta_path: Path,
+    case_key: str,
+    case_hash: str,
+) -> bool:
+    if not (run_dir / "case.db").exists():
+        return False
+    if not (run_dir / "case.rst").exists():
+        return False
+    if not case_meta_path.exists():
+        return False
+    return _meta_matches(
+        case_meta_path,
+        key_field="case_key",
+        hash_field="case_hash",
+        key=case_key,
+        h=case_hash,
+    )
+
+
 def run_cases(
-    inputs: Tuple[SimCase, ...],
+    book: xw.Book,
+    inputs: tuple[SimCase, ...],
     save_intermediate: bool = False,
 ):
-    repo_root = Path(__file__).resolve().parents[2]
-    base_run_dir = repo_root / "results" / "case"
-    case_artifacts_root = repo_root / "artifacts" / "case"
+    cfg = get_path_config()
+    base_run_dir = cfg.results_root / "case"
+    case_artifacts_root = cfg.artifacts_root / "case"
 
-    for sim_case in inputs:
-        case_key = sim_case.to_string()
-        case_hash = build_case_hash(case_key)
+    # Run MAPDL via a separate Python subprocess per case.
+    # Excel/COM updates remain in this parent process.
+    session_root = base_run_dir / "__mapdl_session"
+    session_root.mkdir(parents=True, exist_ok=True)
 
-        run_dir = base_run_dir / f"{case_hash}"
-        # Use a stable, non-hash jobname so result filenames don't include the case hash.
-        # The run_dir is already namespaced by case_hash.
-        jobname = "case"
+    # Use a stable, non-hash jobname so result filenames don't include the case hash.
+    jobname = "case"
 
-        run_dir.mkdir(parents=True, exist_ok=True)
+    import subprocess
+    import sys
 
-        # Save sim_case metadata alongside results for reproducibility.
-        sim_case_path = case_artifacts_root / case_hash / "sim_case.json"
-        sim_case_path.parent.mkdir(parents=True, exist_ok=True)
-        sim_case_path.write_text(
-            json.dumps(
-                {
-                    "case_key": case_key,
-                    "case_hash": case_hash,
-                    "sim_case": sim_case,
-                },
-                ensure_ascii=False,
-                indent=2,
-                default=lambda o: (o.tolist() if hasattr(o, "tolist") else vars(o)),
-            ),
-            encoding="utf-8",
-        )
+    try:
+        # Mark all selected rows as pending up-front.
+        for sim_case in inputs:
+            _set_status_pending(
+                book,
+                _status_range_for_input_row(book, int(sim_case.row_idx)),
+            )
 
-        try:
-            with mapdl_session(
-                run_location=str(run_dir),
-                jobname=jobname,
-                cleanup_on_exit=False,
-            ) as mapdl:
-                print(sim_case.to_string())
-                pipeline = build_pipeline(
-                    sim_case,
-                    save_intermediate=save_intermediate,
+        for sim_case in inputs:
+            status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
+            _set_status_running(book, status_cell)
+
+            case_key = sim_case.to_string()
+            case_hash = build_case_hash(case_key)
+
+            run_dir = base_run_dir / f"{case_hash}"
+            run_dir.mkdir(parents=True, exist_ok=True)
+
+            # Save sim_case metadata alongside results for reproducibility.
+            sim_case_path = case_artifacts_root / case_hash / "sim_case.json"
+            sim_case_path.parent.mkdir(parents=True, exist_ok=True)
+            sim_case_path.write_text(
+                json.dumps(
+                    {
+                        "case_key": case_key,
+                        "case_hash": case_hash,
+                        "sim_case": sim_case,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    default=lambda o: (
+                        o.tolist() if hasattr(o, "tolist") else vars(o)
+                    ),
+                ),
+                encoding="utf-8",
+            )
+
+            print(sim_case.to_string())
+
+            # If smart/cache and this case is already solved, skip.
+            case_meta_path = case_artifacts_root / case_hash / "sim_case.json"
+            compute_policy = str(getattr(cfg, "compute_policy", "smart")).lower()
+
+            if compute_policy in {"smart", "cache"} and _is_case_solved(
+                run_dir=run_dir,
+                case_meta_path=case_meta_path,
+                case_key=case_key,
+                case_hash=case_hash,
+            ):
+                _set_status_skip(book, status_cell)
+                continue
+
+            # Decide whether to reuse geometry/mesh caches.
+            from custom_io.geometry_io import (
+                geometry_db_dir,
+                geometry_hash,
+                geometry_key,
+                import_geometry_db,
+            )
+            from custom_io.mesh_io import (
+                export_mesh_cdb,
+                export_mesh_db,
+                import_mesh_db,
+                mesh_db_dir,
+                mesh_hash,
+                mesh_key,
+            )
+            from material.pipeline import material_commands
+            from setup.pipeline import setup_commands
+            from solve.pipeline import solver_commands
+            from meshing.pipeline import meshing_commands
+
+            mesh_dir = mesh_db_dir(sim_case)
+            mesh_meta = mesh_dir / "sim_case.json"
+            mesh_db = mesh_dir / "mesh.db"
+            mesh_ok = mesh_db.exists() and _meta_matches(
+                mesh_meta,
+                key_field="mesh_key",
+                hash_field="mesh_hash",
+                key=mesh_key(sim_case),
+                h=mesh_hash(sim_case),
+            )
+
+            geom_dir = geometry_db_dir(sim_case)
+            geom_meta = geom_dir / "sim_case.json"
+            geom_db = geom_dir / "geometry.db"
+            geom_ok = geom_db.exists() and _meta_matches(
+                geom_meta,
+                key_field="geometry_key",
+                hash_field="geometry_hash",
+                key=geometry_key(sim_case),
+                h=geometry_hash(sim_case),
+            )
+
+            # cache policy: if no reusable caches, skip.
+            if compute_policy == "cache" and not (mesh_ok or geom_ok):
+                _set_status_skip(book, status_cell)
+                continue
+
+            # Build the solve pipeline depending on cache availability.
+            if compute_policy in {"smart", "cache"} and mesh_ok:
+                # Fast path: import mesh DB, then apply material/setup/solve.
+                # We still compute unit_cell in Python for setup naming.
+                from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
+                from custom_io.lgf_io import import_lgf
+
+                lattice = lgf_to_lattice(import_lgf(sim_case.pre_mesh_spec.geometry.cell_name))
+                unit_cell = lattice_to_unit_cell(lattice)
+
+                pipeline = (
+                    ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
+                    + import_mesh_db(sim_case)
+                    # RESUME may reset jobname; /FILNAME must run at BEGIN level.
+                    + ("FINISH", "/FILNAME,case", "/PREP7")
+                    + material_commands(sim_case.post_mesh_spec.material)
+                    + setup_commands(
+                        unit_cell,
+                        sim_case.pre_mesh_spec.profile,
+                        sim_case.pre_mesh_spec.geometry,
+                        sim_case.post_mesh_spec.setup,
+                    )
+                    + solver_commands(sim_case.post_mesh_spec.setup)
+                    + ("SAVE,'case','db'",)
                 )
-                run_commands(mapdl, pipeline)
-        except Exception as e:
-            print(f"Error: {e}")
-            raise
+            elif compute_policy in {"smart", "cache"} and geom_ok:
+                # Mid path: import geometry DB, then mesh + material/setup/solve.
+                from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
+                from custom_io.lgf_io import import_lgf
+
+                lattice = lgf_to_lattice(import_lgf(sim_case.pre_mesh_spec.geometry.cell_name))
+                unit_cell = lattice_to_unit_cell(lattice)
+
+                pipeline = (
+                    ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
+                    + import_geometry_db(sim_case)
+                    # RESUME may reset jobname; /FILNAME must run at BEGIN level.
+                    + ("FINISH", "/FILNAME,case", "/PREP7")
+                    + meshing_commands(
+                        unit_cell,
+                        sim_case.pre_mesh_spec.geometry,
+                        sim_case.pre_mesh_spec.profile,
+                        sim_case.pre_mesh_spec.meshing,
+                    )
+                    + ((export_mesh_db(sim_case) + export_mesh_cdb(sim_case)) if save_intermediate else ())
+                    + material_commands(sim_case.post_mesh_spec.material)
+                    + setup_commands(
+                        unit_cell,
+                        sim_case.pre_mesh_spec.profile,
+                        sim_case.pre_mesh_spec.geometry,
+                        sim_case.post_mesh_spec.setup,
+                    )
+                    + solver_commands(sim_case.post_mesh_spec.setup)
+                    + ("SAVE,'case','db'",)
+                )
+            else:
+                pipeline = build_pipeline(sim_case, save_intermediate=save_intermediate)
+
+            # Ensure jobname is set after /CLEAR inside the pipeline.
+            pipeline = pipeline[:1] + ("/FILNAME,case",) + pipeline[1:]
+
+            cwd_cmds = (f"/CWD,'{run_dir.as_posix()}'",)
+
+            # Save full solve command stream for reproducibility.
+            macro_path = case_artifacts_root / case_hash / "main.mac"
+            write_apdl_macro(
+                macro_path,
+                cwd_cmds + pipeline,
+                title="solve",
+                metadata={
+                    "case_hash": case_hash,
+                    "jobname": jobname,
+                },
+            )
+
+            # Unique session dir per subprocess to avoid collisions.
+            session_dir = session_root / case_hash
+            session_dir.mkdir(parents=True, exist_ok=True)
+
+            cmd = [
+                sys.executable,
+                "-m",
+                "custom_io.mapdl_worker",
+                "--macro",
+                str(macro_path),
+                "--session-dir",
+                str(session_dir),
+                "--jobname",
+                jobname,
+            ]
+            if getattr(cfg, "nproc", None):
+                cmd += ["--nproc", str(int(cfg.nproc))]
+
+            try:
+                subprocess.run(cmd, check=True)
+            except Exception:
+                _set_status_fail(book, status_cell)
+                raise
+
+            _set_status_done(book, status_cell)
+    except Exception as e:
+        print(f"Error: {e}")
+        raise
 
 
 def run_postprocess(
     book: xw.Book,
-    inputs: Tuple[SimCase, ...],
+    inputs: tuple[SimCase, ...],
     output_header: Header,
 ) -> None:
-    """Run postprocessing for the given cases.
+    """Run postprocessing for the given cases (long-format t_out).
 
-    This derives required outputs from the Excel `t_output` header and validates
-    them against `POSTPROCESS_OUTPUT_SPEC`.
+    Output table is expected to be named `t_out` (preferred) or `t_output`.
 
-    The derived mapping is `prefix -> n_components` where `n_components` must be
-    one of {1,3,6,9}.
+    Extraction produces a flat list of :class:`post.row.TOutRow` and writes them
+    into the output table with columns:
+      index, hash, category, metric, component, value, unit
+
+    NOTE: `output_header` is accepted for backward compatibility with call sites
+    but is not used.
     """
 
-    repo_root = Path(__file__).resolve().parents[2]
-    base_run_dir = repo_root / "results" / "case"
+    _ = output_header
 
-    needed: dict[str, int] = {}
-    component_sets: dict[str, set[str]] = {}
+    cfg = get_path_config()
+    base_run_dir = cfg.results_root / "case"
+    case_artifacts_root = cfg.artifacts_root / "case"
 
-    for col in output_header:
-        name = str(col).strip()
-        if not name:
-            continue
+    # Requested output prefixes for the new long-format pipeline.
+    # TODO: make this configurable from Excel once the schema is finalized.
+    needed: dict[str, int] = {
+        "boundary_force": 9,
+    }
 
-        if "_" in name:
-            prefix, suffix = name.rsplit("_", 1)
-            if suffix in _DIR_COMPONENTS:
-                component_sets.setdefault(prefix, set()).add(suffix)
-                continue
+    from custom_io.excel_write_long import write_long_rows
+    from post.boundary_force_command import extract_boundary_force_rows
+    from post.context import PostprocessContext
 
-        # Scalar output column
-        needed[name] = 1
+    try:
+        output_table: Table = find_table(book, _OUTPUT_TABLE)
+    except KeyError:
+        output_table = find_table(book, _OUTPUT_TABLE_FALLBACK)
 
-    for prefix, comps in component_sets.items():
-        needed[prefix] = len(comps)
+    all_rows: list[dict[str, Any]] = []
+    next_index = 0
 
-    # Validate against the postprocess output spec.
-    for prefix, n in needed.items():
-        expected = POSTPROCESS_OUTPUT_SPEC.get(prefix)
-        if expected is None:
-            raise KeyError(
-                f"t_output requests unknown postprocess prefix {prefix!r}. "
-                f"Add it to POSTPROCESS_OUTPUT_SPEC (src/postprocess/output_spec.py)."
-            )
-        if expected != n:
-            raise ValueError(
-                f"t_output prefix {prefix!r} has {n} components, but spec requires {expected}."
-            )
+    # Keep a single MAPDL session open and switch working directory per case.
+    session_dir = base_run_dir / "__mapdl_post_session"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    jobname = "case"
 
-    # Ensure required scalar columns exist.
-    for req in ("index", "hash"):
-        if req not in needed:
-            raise ValueError(f"t_output is missing required scalar column {req!r}.")
+    try:
+        for sim_case in inputs:
+            _set_status_pending(book, _status_range_for_input_row(book, int(sim_case.row_idx)))
 
-    # Prepare output table writer.
-    from custom_io.excel_write import (
-        write_Vector3x3,
-    )
+        with mapdl_session(
+            run_location=str(session_dir),
+            jobname=jobname,
+            cleanup_on_exit=False,
+            nproc=getattr(cfg, "nproc", None),
+        ) as mapdl:
+            for sim_case in inputs:
+                status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
+                _set_status_running(book, status_cell)
 
-    output_table: Table = find_table(book, _OUTPUT_TABLE)
+                sim_type = str(sim_case.post_mesh_spec.setup.sim_type)
+                allowed_needed: dict[str, int] = {
+                    p: n for p, n in needed.items() if is_post_output_allowed(p, sim_type)
+                }
+                if not allowed_needed:
+                    _set_status_done(book, status_cell)
+                    continue
 
-    # Run per-case postprocess APDL and write requested results back to t_output.
-    for sim_case in inputs:
-        case_key = sim_case.to_string()
-        case_hash = build_case_hash(case_key)
+                case_hash = build_case_hash(sim_case.to_string())
+                run_dir = base_run_dir / f"{case_hash}"
 
-        run_dir = base_run_dir / f"{case_hash}"
-        jobname = "case"
-
-        try:
-            with mapdl_session(
-                run_location=str(run_dir),
-                jobname=jobname,
-                cleanup_on_exit=False,
-            ) as mapdl:
-                print(sim_case.to_string())
-                pipeline = postprocess_commands(
-                    sim_case=sim_case,
-                    needed=needed,
+                prelude = (
+                    f"/CWD,'{run_dir.as_posix()}'",
+                    "FINISH",
+                    "/CLEAR",
+                    "RESUME,'case','db'",
                 )
-                run_commands(mapdl, pipeline)
+                run_commands(mapdl, prelude)
 
-                # Write outputs
-                row0 = int(sim_case.row_idx)
+                pipeline = post_commands(sim_case=sim_case, needed=allowed_needed)
 
-                if "boundary_traction" in needed:
-                    # Mapdl parameters created by postprocess.boundary_command
-                    bt = mapdl.parameters["pp_boundary_traction"]
-                    write_Vector3x3(
-                        output_table,
-                        row0,
-                        "boundary_traction",
-                        bt,
+                write_apdl_macro(
+                    case_artifacts_root / case_hash / "post.mac",
+                    prelude + pipeline,
+                    title="post",
+                    metadata={
+                        "case_hash": case_hash,
+                        "jobname": jobname,
+                        "needed": ",".join(sorted(allowed_needed.keys())),
+                    },
+                )
+
+                try:
+                    run_commands(mapdl, pipeline)
+                except Exception:
+                    _set_status_fail(book, status_cell)
+                    raise
+
+                ctx = PostprocessContext(sim_case=sim_case, needed=allowed_needed)
+
+                if "boundary_force" in allowed_needed:
+                    rows = extract_boundary_force_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        start_index=next_index,
+                        unit="N",
                     )
+                    next_index += len(rows)
+                    all_rows.extend([r.as_dict() for r in rows])
 
-                if "boundary_force" in needed:
-                    bf = mapdl.parameters["pp_boundary_force"]
-                    write_Vector3x3(
-                        output_table,
-                        row0,
-                        "boundary_force",
-                        bf,
-                    )
+                _set_status_done(book, status_cell)
 
-                if "boundary_moment" in needed:
-                    bm = mapdl.parameters["pp_boundary_moment"]
-                    write_Vector3x3(
-                        output_table,
-                        row0,
-                        "boundary_moment",
-                        bm,
-                    )
-        except Exception as e:
-            print(f"Error: {e}")
-            raise
+        # Write all extracted rows at once.
+        write_long_rows(table=output_table, rows=all_rows)
+
+    except Exception as e:
+        print(f"Error: {e}")
+        raise
 
 
-def build_case_hash(key: str):
-    return hashlib.sha256(key.encode()).hexdigest()
+def build_case_hash(key: str) -> str:
+    return sha1_hex(key)
 
 
 def _ensure_table_column(
@@ -432,49 +830,49 @@ def _ensure_table_rows(table: Table, n_rows: int) -> None:
         list_rows.Add()
 
 
-def _write_index_hash_to_output_table(
-    book: xw.Book,
-    inputs: Tuple[SimCase, ...],
-    hashes: list[str],
-    selected_indices: tuple[int, ...] | None,
-    table_key: str = _OUTPUT_TABLE,
-) -> None:
-    output_table: Table = find_table(book, table_key)
-
-    # Ensure output has the same number of rows as inputs.
-    _ensure_table_rows(output_table, len(inputs))
-
-    col_index = _ensure_table_column(output_table, "index")
-    col_hash = _ensure_table_column(output_table, "hash")
-
-    body = output_table.data_body_range
-    if body is None:
-        return
-
-    col0_index = col_index - 1
-    col0_hash = col_hash - 1
-
-    if selected_indices is None:
-        rows_to_write = range(len(inputs))
-    else:
-        rows_to_write = selected_indices
-
-    for i in rows_to_write:
-        # Excel-side index is 1-based.
-        body[i, col0_index].value = inputs[i].row_idx + 1
-        body[i, col0_hash].value = hashes[i]
-
-
 def find_table(
     book: xw.Book,
     key: str,
 ) -> Table:
+    table, _sheet = find_table_and_sheet(book, key)
+    return table
+
+
+def find_table_and_sheet(
+    book: xw.Book,
+    key: str,
+) -> tuple[Table, xw.Sheet]:
     for sheet in book.sheets:
         for table in sheet.tables:
             if table.name == key or table.display_name == key:
-                return table
+                return table, sheet
 
     raise KeyError(f"Could not find Excel table {key!r}")
+
+
+def _status_range_for_input_row(book: xw.Book, row_idx: int) -> xw.Range | None:
+    """Return the status cell range for a given t_input body row.
+
+    We write to a fixed column (default: X) on the same sheet that contains
+    `t_input`, at the Excel row corresponding to `row_idx` in the table body.
+    """
+
+    try:
+        t, sheet = find_table_and_sheet(book, _INPUT_TABLE)
+    except KeyError:
+        return None
+
+    body = t.data_body_range
+    if body is None:
+        return None
+
+    excel_row = int(body.row) + int(row_idx)
+    addr = f"{_STATUS_COL}{excel_row}"
+
+    try:
+        return sheet.range(addr)
+    except Exception:
+        return None
 
 
 def get_table_data(
@@ -550,8 +948,7 @@ def _validate_header_key(header: Any) -> str:
 
     if " " in s:
         raise ValueError(
-            f"Excel header {s!r} contains spaces. "
-            "Use snake_case (e.g. 'cell_size_X')."
+            f"Excel header {s!r} contains spaces. Use snake_case (e.g. 'cell_size_X')."
         )
 
     normalized = _normalize_header_key(s)
@@ -564,8 +961,8 @@ def _validate_header_key(header: Any) -> str:
 def _get_simulation_cases(
     input_header: Header,
     input_body: Body,
-) -> Tuple[SimCase, ...]:
-    cases: List[SimCase] = []
+) -> tuple[SimCase, ...]:
+    cases: list[SimCase] = []
 
     for i, row in enumerate(input_body):
         row_values = _map_header_to_row_values(input_header, row)
@@ -626,10 +1023,10 @@ def _get_simulation_cases(
 def _map_header_to_row_values(
     input_header: Header,
     row: tuple[Any, ...],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if len(input_header) != len(row):
         raise ValueError(
-            "Header and row lengths do not match: " f"{len(input_header)} != {len(row)}"
+            f"Header and row lengths do not match: {len(input_header)} != {len(row)}"
         )
 
     keys = [_validate_header_key(h) for h in input_header]
@@ -638,4 +1035,4 @@ def _map_header_to_row_values(
         dupes = {k for k in keys if keys.count(k) > 1}
         raise ValueError("Duplicate Excel headers: " + ", ".join(sorted(dupes)))
 
-    return dict(zip(keys, row))
+    return dict(zip(keys, row, strict=True))

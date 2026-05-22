@@ -9,10 +9,11 @@ Convention:
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+import time
+from collections.abc import Mapping
+from typing import Any
 
 import numpy as np
-import xlwings as xw
 from xlwings.main import Table
 
 from core.floats.types import Vector3, Vector3x3, Vector6
@@ -34,179 +35,238 @@ def _ensure_table_column(table: Table, column_name: str) -> int:
     return int(new_col.Index)
 
 
-def _ensure_table_rows(table: Table, n_rows: int) -> None:
-    """Ensure a ListObject table has exactly n_rows body rows."""
-
-    api = table.api
-    list_rows = api.ListRows
-
-    while list_rows.Count > n_rows:
-        list_rows(list_rows.Count).Delete()
-
-    while list_rows.Count < n_rows:
-        list_rows.Add()
-
-
-def write_value(
-    table: Table,
-    row_idx0: int,
-    key: str,
-    value: Any,
-    *,
-    ensure_rows: int | None = None,
-) -> None:
-    """Write a single value into a table row.
-
-    Args:
-        table: xlwings Table (Excel ListObject)
-        row_idx0: 0-based row index within the table body
-        key: column header (snake_case)
-        value: value to write
-        ensure_rows: if given, first resize table body to exactly this many rows
-    """
-
-    if ensure_rows is not None:
-        _ensure_table_rows(table, ensure_rows)
-
-    col_idx1 = _ensure_table_column(table, key)
-
-    body = table.data_body_range
-    if body is None:
-        return
-
-    body[row_idx0, col_idx1 - 1].value = value
-
-
-def write_row(
-    table: Table,
-    row_idx0: int,
-    values: Mapping[str, Any],
-    *,
-    ensure_rows: int | None = None,
-) -> None:
-    """Write multiple (key,value) pairs into a single table row."""
-
-    if ensure_rows is not None:
-        _ensure_table_rows(table, ensure_rows)
-
-    body = table.data_body_range
-    if body is None:
-        return
-
-    # Ensure all columns first (mutates table), then refresh body.
-    col_indices1 = {
-        k: _ensure_table_column(table, k) for k in values.keys()
-    }
-
-    body = table.data_body_range
-    if body is None:
-        return
-
-    for k, v in values.items():
-        body[row_idx0, col_indices1[k] - 1].value = v
-
-
-def write_float(
-    table: Table,
-    row_idx0: int,
-    key: str,
-    value: float,
-    *,
-    ensure_rows: int | None = None,
-) -> None:
-    write_value(table, row_idx0, key, float(value), ensure_rows=ensure_rows)
-
-
-def write_int(
-    table: Table,
-    row_idx0: int,
-    key: str,
-    value: int,
-    *,
-    ensure_rows: int | None = None,
-) -> None:
-    write_value(table, row_idx0, key, int(value), ensure_rows=ensure_rows)
-
-
-def write_str(
-    table: Table,
-    row_idx0: int,
-    key: str,
-    value: str,
-    *,
-    ensure_rows: int | None = None,
-) -> None:
-    write_value(table, row_idx0, key, str(value), ensure_rows=ensure_rows)
-
-
-def write_Vector3(
-    table: Table,
-    row_idx0: int,
+def _values_Vector3(
     prefix: str,
     value: Vector3,
-    *,
-    ensure_rows: int | None = None,
-) -> None:
-    v = np.asarray(value, dtype=float).reshape(3)
-    write_row(
-        table,
-        row_idx0,
-        {
-            f"{prefix}_X": float(v[0]),
-            f"{prefix}_Y": float(v[1]),
-            f"{prefix}_Z": float(v[2]),
-        },
-        ensure_rows=ensure_rows,
-    )
+) -> dict[str, float]:
+    # MAPDL sometimes returns (3, 1) or (1, 3); normalize to flat length-3.
+    arr = np.asarray(value, dtype=float).reshape(-1)
+    if arr.size != 3:
+        raise ValueError(
+            f"{prefix}: expected Vector3 with 3 elements, got shape {np.shape(value)!r}"
+        )
+
+    x, y, z = (float(v) for v in arr)
+    return {
+        f"{prefix}_X": x,
+        f"{prefix}_Y": y,
+        f"{prefix}_Z": z,
+    }
 
 
-def write_Vector6(
-    table: Table,
-    row_idx0: int,
+def _values_Vector6(
     prefix: str,
     value: Vector6,
-    *,
-    ensure_rows: int | None = None,
-) -> None:
-    v = np.asarray(value, dtype=float).reshape(6)
-    # Convention: [XX, YY, ZZ, YZ, XZ, XY]
-    write_row(
-        table,
-        row_idx0,
-        {
-            f"{prefix}_XX": float(v[0]),
-            f"{prefix}_YY": float(v[1]),
-            f"{prefix}_ZZ": float(v[2]),
-            f"{prefix}_YZ": float(v[3]),
-            f"{prefix}_XZ": float(v[4]),
-            f"{prefix}_XY": float(v[5]),
-        },
-        ensure_rows=ensure_rows,
-    )
+) -> dict[str, float]:
+    # MAPDL sometimes returns (6, 1) or (1, 6); normalize to flat length-6.
+    arr = np.asarray(value, dtype=float).reshape(-1)
+    if arr.size != 6:
+        raise ValueError(
+            f"{prefix}: expected Vector6 with 6 elements, got shape {np.shape(value)!r}"
+        )
+
+    xx, yy, zz, xy, yz, xz = (float(v) for v in arr)
+    # Convention (APDL Vector6): [X, Y, Z, XY, YZ, XZ]
+    return {
+        f"{prefix}_X": xx,
+        f"{prefix}_Y": yy,
+        f"{prefix}_Z": zz,
+        f"{prefix}_XY": xy,
+        f"{prefix}_YZ": yz,
+        f"{prefix}_XZ": xz,
+    }
 
 
-def write_Vector3x3(
-    table: Table,
-    row_idx0: int,
+def _values_Vector3x3(
     prefix: str,
     value: Vector3x3,
-    *,
-    ensure_rows: int | None = None,
-) -> None:
-    m = np.asarray(value, dtype=float).reshape(3, 3)
-    write_row(
-        table,
-        row_idx0,
-        {
-            f"{prefix}_XX": float(m[0, 0]),
-            f"{prefix}_XY": float(m[0, 1]),
-            f"{prefix}_XZ": float(m[0, 2]),
-            f"{prefix}_YX": float(m[1, 0]),
-            f"{prefix}_YY": float(m[1, 1]),
-            f"{prefix}_YZ": float(m[1, 2]),
-            f"{prefix}_ZX": float(m[2, 0]),
-            f"{prefix}_ZY": float(m[2, 1]),
-            f"{prefix}_ZZ": float(m[2, 2]),
-        },
-        ensure_rows=ensure_rows,
-    )
+) -> dict[str, float]:
+    # Normalize: accept (3,3) as well as flattened (9,) or (9,1), etc.
+    arr = np.asarray(value, dtype=float)
+    if arr.size != 9:
+        raise ValueError(
+            f"{prefix}: expected Vector3x3 with 9 elements, got shape {np.shape(value)!r}"
+        )
+    arr = arr.reshape(3, 3)
+
+    xx, xy, xz = (float(v) for v in arr[0])
+    yx, yy, yz = (float(v) for v in arr[1])
+    zx, zy, zz = (float(v) for v in arr[2])
+    return {
+        f"{prefix}_XX": xx,
+        f"{prefix}_XY": xy,
+        f"{prefix}_XZ": xz,
+        f"{prefix}_YX": yx,
+        f"{prefix}_YY": yy,
+        f"{prefix}_YZ": yz,
+        f"{prefix}_ZX": zx,
+        f"{prefix}_ZY": zy,
+        f"{prefix}_ZZ": zz,
+    }
+
+
+class _ExcelNAType:
+    """Sentinel representing Excel #N/A error."""
+
+
+EXCEL_NA = _ExcelNAType()
+
+
+class WriteQueue:
+    """Queue table writes and flush them in larger blocks.
+
+    This is used for the legacy wide-format `t_output` table.
+
+    - Keyed by output table row_idx0 (0-based within data_body_range).
+    - Only rows present in the queue are written during flush.
+
+    Special values:
+      - EXCEL_NA: written as an Excel #N/A error (via formula =NA()).
+    """
+
+    def __init__(self) -> None:
+        self._rows: dict[int, dict[str, Any]] = {}
+
+    def add_values(self, row_idx0: int, values: Mapping[str, Any]) -> None:
+        row = self._rows.setdefault(int(row_idx0), {})
+        row.update(values)
+
+    def add_int(self, row_idx0: int, name: str, value: int) -> None:
+        self.add_values(row_idx0, {str(name): int(value)})
+
+    def add_float(self, row_idx0: int, name: str, value: Any) -> None:
+        if value is EXCEL_NA:
+            self.add_values(row_idx0, {str(name): EXCEL_NA})
+            return
+        arr = np.asarray(value, dtype=float).reshape(-1)
+        if arr.size != 1:
+            raise ValueError(
+                f"{name}: expected scalar float value, got shape {np.shape(value)!r}"
+            )
+        self.add_values(row_idx0, {str(name): float(arr[0])})
+
+    def add_str(self, row_idx0: int, name: str, value: str) -> None:
+        self.add_values(row_idx0, {str(name): str(value)})
+
+    def add_Vector3(self, row_idx0: int, prefix: str, value: Vector3) -> None:
+        self.add_values(row_idx0, _values_Vector3(prefix, value))
+
+    def add_Vector6(self, row_idx0: int, prefix: str, value: Vector6) -> None:
+        self.add_values(row_idx0, _values_Vector6(prefix, value))
+
+    def add_Vector3x3(self, row_idx0: int, prefix: str, value: Vector3x3) -> None:
+        self.add_values(row_idx0, _values_Vector3x3(prefix, value))
+
+    def flush(self, table: Table) -> None:
+        if not self._rows:
+            return
+
+        # Ensure columns exist and map to 0-based indices.
+        all_cols: list[str] = []
+        seen: set[str] = set()
+        for _, row in sorted(self._rows.items()):
+            for c in row:
+                if c not in seen:
+                    seen.add(c)
+                    all_cols.append(c)
+
+        col_indices0 = {c: _ensure_table_column(table, c) - 1 for c in all_cols}
+
+        body = table.data_body_range
+        if body is None:
+            return
+
+        # Sort cols by index and partition into contiguous blocks.
+        cols_sorted = sorted(col_indices0.items(), key=lambda t: t[1])  # (name, idx0)
+        col_blocks: list[list[tuple[str, int]]] = []
+        for name, idx0 in cols_sorted:
+            if not col_blocks:
+                col_blocks.append([(name, idx0)])
+                continue
+            if idx0 == col_blocks[-1][-1][1] + 1:
+                col_blocks[-1].append((name, idx0))
+            else:
+                col_blocks.append([(name, idx0)])
+
+        # Partition rows into contiguous blocks.
+        row_idxs = sorted(self._rows.keys())
+        row_blocks: list[tuple[int, int]] = []
+        start = prev = row_idxs[0]
+        for r in row_idxs[1:]:
+            if r == prev + 1:
+                prev = r
+                continue
+            row_blocks.append((start, prev))
+            start = prev = r
+        row_blocks.append((start, prev))
+
+        writes: list[tuple[Any, list[list[Any]]]] = []
+
+        # 1) First collect all write ranges and data.
+        for r0, r1 in row_blocks:
+            for block in col_blocks:
+                names = [n for n, _ in block]
+                c0 = block[0][1]
+                c1 = block[-1][1]
+
+                rng = body[r0 : r1 + 1, c0 : c1 + 1]
+
+                data2d: list[list[Any]] = []
+                for rr in range(r0, r1 + 1):
+                    row = self._rows.get(rr, {})
+                    # EXCEL_NA is patched in a later pass via formula.
+                    data2d.append([
+                        (None if row.get(n) is EXCEL_NA else row.get(n)) for n in names
+                    ])
+
+                writes.append((rng, data2d))
+
+        # 2) Then write to Excel after leaving the nested loop.
+        for rng, data2d in writes:
+            self._write_range_with_retry(rng, data2d)
+
+        # 3) Patch in Excel error values (#N/A) via formulas.
+        # We do this as a separate pass because Range.value cannot reliably
+        # create true error cells (it would become the text "#N/A").
+        for r, row in self._rows.items():
+            for c, v in row.items():
+                if v is not EXCEL_NA:
+                    continue
+                try:
+                    idx0 = col_indices0.get(c)
+                    if idx0 is None:
+                        continue
+                    body[r, idx0].formula = "=NA()"
+                except Exception:
+                    # Best-effort: if Excel is busy or formula assignment fails,
+                    # leave whatever was written in the main pass.
+                    pass
+
+        self._rows.clear()
+
+    @staticmethod
+    def _write_range_with_retry(rng: Any, data2d: list[list[Any]]) -> None:
+        # Retry for transient Excel busy errors.
+        for attempt in range(15):
+            try:
+                rng.value = data2d
+                return
+            except Exception as e:
+                try:
+                    import pywintypes
+
+                    if isinstance(e, pywintypes.com_error):
+                        hr = e.args[0] if e.args else None
+                        excel_hr = None
+                        if (
+                            len(e.args) >= 3
+                            and isinstance(e.args[2], tuple)
+                            and len(e.args[2]) >= 6
+                        ):
+                            excel_hr = e.args[2][5]
+                        if hr == -2147352567 and excel_hr in (-2146777998,):
+                            time.sleep(0.1 * (attempt + 1))
+                            continue
+                except Exception:
+                    pass
+                raise
