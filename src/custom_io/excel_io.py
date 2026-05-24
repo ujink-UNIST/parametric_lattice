@@ -661,19 +661,55 @@ def run_postprocess(
     case_artifacts_root = cfg.artifacts_root / "case"
 
     # Requested output prefixes for the new long-format pipeline.
+    # Provide only user-facing outputs here; prerequisites are resolved automatically.
     # TODO: make this configurable from Excel once the schema is finalized.
-    needed: dict[str, int] = {
-        "boundary_force": 9,
-        "boundary_moment": 9,
-        "boundary_traction": 9,
-        "boundary_stress": 6,
+    requested_needed: dict[str, int] = {
+        "volume": 1,
+        "mass": 1,
+        "volume_stress": 1,
+        "volume_energy": 1,
+        "volume_avg_stress": 1,
+        "volume_avg_energy": 1,
+        "boundary_modulus": 1,
+        "effective_youngs_modulus": 1,
+        "effective_shear_modulus": 1,
+        "specific_youngs_modulus": 1,
+        "specific_shear_modulus": 1,
+        "boundary_touch_area": 1,
+        "contact_stress": 1,
     }
+
+    # Compute-time needed = requested + all prerequisites.
+    from post.dependency_resolver import expand_prefixes
+    from post.output_dependency import OUTPUT_DEPENDENCIES
+
+    expanded = expand_prefixes(requested_needed.keys(), OUTPUT_DEPENDENCIES)
+    needed: dict[str, int] = {p: 1 for p in expanded}
 
     from custom_io.excel_write_long import upsert_long_rows
     from post.boundary_force_command import extract_boundary_force_rows
     from post.boundary_moment_command import extract_boundary_moment_rows
     from post.boundary_traction_command import extract_boundary_traction_rows
     from post.boundary_stress_command import extract_boundary_stress_rows
+    from post.boundary_modulus_command import extract_boundary_modulus_rows
+    from post.boundary_touch_area_command import extract_boundary_touch_area_rows
+    from post.contact_command import extract_contact_stress_rows, extract_contact_traction_rows
+    from post.volume_command import extract_volume_rows
+    from post.effective_moduli_command import (
+        extract_effective_shear_modulus_rows,
+        extract_effective_youngs_modulus_rows,
+    )
+    from post.mass_command import extract_mass_rows
+    from post.specific_moduli_command import (
+        extract_specific_shear_modulus_rows,
+        extract_specific_youngs_modulus_rows,
+    )
+    from post.volume_metrics_command import (
+        extract_volume_avg_energy_rows,
+        extract_volume_avg_stress_rows,
+        extract_volume_energy_rows,
+        extract_volume_stress_rows,
+    )
     from post.context import PostprocessContext
     from post.row import T_OUT_COLUMNS
     from post.sim_case_meta import META_COLUMNS
@@ -708,6 +744,10 @@ def run_postprocess(
                 if not allowed_needed:
                     _set_status_done(book, status_cell)
                     continue
+
+                allowed_requested: set[str] = {
+                    p for p in requested_needed.keys() if p in allowed_needed
+                }
 
                 case_hash = build_case_hash(sim_case.to_string())
                 run_dir = base_run_dir / f"{case_hash}"
@@ -751,6 +791,7 @@ def run_postprocess(
                         d.update(meta)
                         all_rows.append(d)
 
+                # Intermediates (computed if needed by the dependency graph).
                 if "boundary_force" in allowed_needed:
                     rows = extract_boundary_force_rows(
                         ctx=ctx,
@@ -758,7 +799,8 @@ def run_postprocess(
                         case_hash=case_hash,
                         unit="N",
                     )
-                    _add_rows(rows)
+                    if "boundary_force" in allowed_requested:
+                        _add_rows(rows)
 
                 if "boundary_moment" in allowed_needed:
                     rows = extract_boundary_moment_rows(
@@ -767,7 +809,8 @@ def run_postprocess(
                         case_hash=case_hash,
                         unit="N*mm",
                     )
-                    _add_rows(rows)
+                    if "boundary_moment" in allowed_requested:
+                        _add_rows(rows)
 
                 if "boundary_traction" in allowed_needed:
                     rows = extract_boundary_traction_rows(
@@ -776,7 +819,8 @@ def run_postprocess(
                         case_hash=case_hash,
                         unit="MPa",
                     )
-                    _add_rows(rows)
+                    if "boundary_traction" in allowed_requested:
+                        _add_rows(rows)
 
                 if "boundary_stress" in allowed_needed:
                     rows = extract_boundary_stress_rows(
@@ -784,6 +828,137 @@ def run_postprocess(
                         mapdl=mapdl,
                         case_hash=case_hash,
                         unit="MPa",
+                    )
+                    if "boundary_stress" in allowed_requested:
+                        _add_rows(rows)
+
+                # Requested outputs
+                if "boundary_modulus" in allowed_requested:
+                    rows = extract_boundary_modulus_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="MPa",
+                    )
+                    _add_rows(rows)
+
+                if "effective_youngs_modulus" in allowed_requested:
+                    rows = extract_effective_youngs_modulus_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="MPa",
+                    )
+                    _add_rows(rows)
+
+                if "effective_shear_modulus" in allowed_requested:
+                    rows = extract_effective_shear_modulus_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="MPa",
+                    )
+                    _add_rows(rows)
+
+                if "specific_youngs_modulus" in allowed_requested:
+                    rows = extract_specific_youngs_modulus_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="MPa/(density)",
+                    )
+                    _add_rows(rows)
+
+                if "specific_shear_modulus" in allowed_requested:
+                    rows = extract_specific_shear_modulus_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="MPa/(density)",
+                    )
+                    _add_rows(rows)
+
+                if "boundary_touch_area" in allowed_requested:
+                    rows = extract_boundary_touch_area_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="mm^2",
+                    )
+                    _add_rows(rows)
+
+                if "contact_traction" in allowed_needed:
+                    rows = extract_contact_traction_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="MPa",
+                    )
+                    if "contact_traction" in allowed_requested:
+                        _add_rows(rows)
+
+                if "contact_stress" in allowed_requested:
+                    rows = extract_contact_stress_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="MPa",
+                    )
+                    _add_rows(rows)
+
+                if "volume" in allowed_requested:
+                    rows = extract_volume_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="mm^3",
+                    )
+                    _add_rows(rows)
+
+                if "mass" in allowed_requested:
+                    rows = extract_mass_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="kg",
+                    )
+                    _add_rows(rows)
+
+                if "volume_stress" in allowed_needed:
+                    rows = extract_volume_stress_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="MPa*mm^3",
+                    )
+                    if "volume_stress" in allowed_requested:
+                        _add_rows(rows)
+
+                if "volume_avg_stress" in allowed_requested:
+                    rows = extract_volume_avg_stress_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="MPa",
+                    )
+                    _add_rows(rows)
+
+                if "volume_energy" in allowed_needed:
+                    rows = extract_volume_energy_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="J",
+                    )
+                    if "volume_energy" in allowed_requested:
+                        _add_rows(rows)
+
+                if "volume_avg_energy" in allowed_requested:
+                    rows = extract_volume_avg_energy_rows(
+                        ctx=ctx,
+                        mapdl=mapdl,
+                        case_hash=case_hash,
+                        unit="J/mm^3",
                     )
                     _add_rows(rows)
 

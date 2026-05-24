@@ -25,6 +25,7 @@ POST_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
     "hash": _SIM_TYPES_ALL,
     # Volume: static only
     "volume": _SIM_TYPES_STATIC,
+    "mass": _SIM_TYPES_STATIC,
     # Modal-only outputs
     **{f"res_freq_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
     **{f"part_factor_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
@@ -38,6 +39,8 @@ POST_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
     "boundary_modulus_ratio": _SIM_TYPES_STATIC,
     "effective_youngs_modulus": _SIM_TYPES_STATIC_NORMAL,
     "effective_shear_modulus": _SIM_TYPES_STATIC_SHEAR,
+    "specific_youngs_modulus": _SIM_TYPES_STATIC_NORMAL,
+    "specific_shear_modulus": _SIM_TYPES_STATIC_SHEAR,
     "boundary_touch_area": _SIM_TYPES_STATIC,
     "boundary_touch_area_ratio": _SIM_TYPES_STATIC,
     "contact_traction": _SIM_TYPES_STATIC,

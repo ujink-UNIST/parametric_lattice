@@ -55,7 +55,6 @@ META_COLUMNS: tuple[str, ...] = (
     "max_element_size",
     # Profile
     "radius",
-    "kappa",
     # Material
     "e_mod",
     "nu",
@@ -95,8 +94,6 @@ def sim_case_meta(sim_case: SimCase) -> dict[str, Any]:
     prof = sim_case.pre_mesh_spec.profile
     if hasattr(prof, "radius"):
         d["radius"] = float(getattr(prof, "radius"))
-    if hasattr(prof, "kappa"):
-        d["kappa"] = float(getattr(prof, "kappa"))
     # Material
     d["e_mod"] = float(sim_case.post_mesh_spec.material.e_mod)
     d["nu"] = float(sim_case.post_mesh_spec.material.nu)
