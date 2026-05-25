@@ -22,6 +22,11 @@ from post.specific_moduli_command import (
 )
 from post.volume_command import build_volume_commands_
 from post.volume_metrics_command import build_volume_energy_commands_, build_volume_stress_commands_
+from post.modal_command import (
+    build_modal_effective_mass_commands_,
+    build_modal_participation_commands_,
+    build_resonant_frequency_command_,
+)
 from post.context import PostprocessContext
 from post.dependency_resolver import expand_prefixes, topo_sort
 from post.output_dependency import OUTPUT_DEPENDENCIES
@@ -63,10 +68,19 @@ _HANDLERS: dict[str, PostHandler] = {
     "volume_avg_energy": _noop,
     "mass": build_mass_commands_,
 
-    # Modal stubs
-    **{f"res_freq_{i}": _noop for i in range(1, 21)},
-    **{f"part_factor_{i}": _noop for i in range(1, 21)},
-    **{f"eff_modal_mass_{i}": _noop for i in range(1, 21)},
+    # Modal outputs
+    **{
+        f"res_freq_{i}": (lambda _ctx, i=i: build_resonant_frequency_command_(_ctx, mode_index=i))
+        for i in range(1, 21)
+    },
+    **{
+        f"part_factor_{i}": (lambda _ctx, i=i: build_modal_participation_commands_(_ctx, mode_index=i))
+        for i in range(1, 21)
+    },
+    **{
+        f"eff_modal_mass_{i}": (lambda _ctx, i=i: build_modal_effective_mass_commands_(_ctx, mode_index=i))
+        for i in range(1, 21)
+    },
 }
 
 

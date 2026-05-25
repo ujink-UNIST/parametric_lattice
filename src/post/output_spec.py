@@ -37,6 +37,7 @@ POST_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
     "boundary_stress": _SIM_TYPES_STATIC,
     "boundary_modulus": _SIM_TYPES_STATIC,
     "boundary_modulus_ratio": _SIM_TYPES_STATIC,
+    "boundary_touch_area_ratio": _SIM_TYPES_STATIC,
     "effective_youngs_modulus": _SIM_TYPES_STATIC_NORMAL,
     "effective_shear_modulus": _SIM_TYPES_STATIC_SHEAR,
     "specific_youngs_modulus": _SIM_TYPES_STATIC_NORMAL,

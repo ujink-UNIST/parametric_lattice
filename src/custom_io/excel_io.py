@@ -677,19 +677,31 @@ def run_postprocess(
     # Provide only user-facing outputs here; prerequisites are resolved automatically.
     # TODO: make this configurable from Excel once the schema is finalized.
     requested_needed: dict[str, int] = {
+        # Static (default)
         "volume": 1,
         "mass": 1,
         "volume_stress": 1,
         "volume_energy": 1,
         "volume_avg_stress": 1,
         "volume_avg_energy": 1,
+        "boundary_force": 1,
+        "boundary_moment": 1,
+        "boundary_traction": 1,
+        "boundary_stress": 1,
         "boundary_modulus": 1,
+        "boundary_modulus_ratio": 1,
         "effective_youngs_modulus": 1,
         "effective_shear_modulus": 1,
         "specific_youngs_modulus": 1,
         "specific_shear_modulus": 1,
         "boundary_touch_area": 1,
+        "boundary_touch_area_ratio": 1,
+        "contact_traction": 1,
         "contact_stress": 1,
+        # Modal (default)
+        **{f"res_freq_{i}": 1 for i in range(1, 21)},
+        **{f"part_factor_{i}": 1 for i in range(1, 21)},
+        **{f"eff_modal_mass_{i}": 1 for i in range(1, 21)},
     }
 
     # Compute-time needed = requested + all prerequisites.
@@ -706,6 +718,8 @@ def run_postprocess(
     from post.boundary_stress_command import extract_boundary_stress_rows
     from post.boundary_modulus_command import extract_boundary_modulus_rows
     from post.boundary_touch_area_command import extract_boundary_touch_area_rows
+    from post.boundary_touch_area_ratio_command import extract_boundary_touch_area_ratio_rows
+    from post.boundary_modulus_ratio_command import extract_boundary_modulus_ratio_rows
     from post.contact_command import (
         extract_contact_stress_rows,
         extract_contact_traction_rows,
@@ -725,6 +739,11 @@ def run_postprocess(
         extract_volume_avg_stress_rows,
         extract_volume_energy_rows,
         extract_volume_stress_rows,
+    )
+    from post.modal_command import (
+        extract_effective_modal_mass_rows,
+        extract_participation_factor_rows,
+        extract_resonant_frequency_rows,
     )
     from post.context import PostprocessContext
     from post.row import T_OUT_COLUMNS
@@ -774,6 +793,22 @@ def run_postprocess(
                 case_hash = build_case_hash(sim_case.to_string())
                 run_dir = base_run_dir / f"{case_hash}"
 
+                # Load per-case post cache (avoid Excel reads for caching).
+                from post.post_cache import (
+                    cache_path_for_case,
+                    load_post_cache,
+                    required_keys_modal,
+                    required_keys_static,
+                    save_post_cache,
+                )
+                from post.boundary_force_command import _SIM_TYPE_TO_ROW
+
+                cache_path = cache_path_for_case(
+                    artifacts_case_dir=case_artifacts_root,
+                    case_hash=case_hash,
+                )
+                cache = load_post_cache(cache_path, case_hash=case_hash)
+
                 prelude = (
                     f"/CWD,'{run_dir.as_posix()}'",
                     "FINISH",
@@ -782,7 +817,40 @@ def run_postprocess(
                 )
                 run_commands(mapdl, prelude)
 
-                pipeline = post_commands(sim_case=sim_case, needed=allowed_needed)
+                # Reduce compute set using cache completeness.
+                sim_type_l = str(sim_type).strip().lower()
+                static_row = _SIM_TYPE_TO_ROW.get(sim_type_l)
+
+                compute_prefixes: set[str] = set()
+                for p in allowed_needed.keys():
+                    # Always compute identifiers/noops via pipeline filtering; here we decide only
+                    # whether to request actual computation.
+                    req_keys: set[str] | None = None
+                    if sim_type_l in {"modal", "modal_ff"}:
+                        # modal: prefixes already include mode number in name
+                        # parse mode index from suffix
+                        try:
+                            mode_index = int(p.rsplit("_", 1)[1])
+                        except Exception:
+                            mode_index = 0
+                        if mode_index > 0:
+                            req_keys = required_keys_modal(p, mode_index=mode_index)
+                    else:
+                        if static_row is not None:
+                            req_keys = required_keys_static(p, sim_type=sim_type_l, row=int(static_row))
+
+                    if not req_keys:
+                        compute_prefixes.add(p)
+                        continue
+
+                    if all(k in cache.rows for k in req_keys):
+                        # cached: skip computing this prefix
+                        continue
+                    compute_prefixes.add(p)
+
+                compute_needed: dict[str, int] = {p: 1 for p in compute_prefixes}
+
+                pipeline = post_commands(sim_case=sim_case, needed=compute_needed)
 
                 write_apdl_macro(
                     case_artifacts_root / case_hash / "post.mac",
@@ -809,6 +877,7 @@ def run_postprocess(
                 from post.sim_case_meta import sim_case_meta
 
                 meta = sim_case_meta(sim_case)
+                cache.sim_case_meta = meta
 
                 case_rows: list[dict[str, Any]] = []
 
@@ -818,176 +887,182 @@ def run_postprocess(
                         d.update(meta)
                         case_rows.append(d)
 
-                # Intermediates (computed if needed by the dependency graph).
-                if "boundary_force" in allowed_needed:
-                    rows = extract_boundary_force_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="N",
-                    )
+                def _cache_rows(rs):
+                    for r in rs:
+                        cache.upsert(
+                            category=str(r.category),
+                            row=int(r.row),
+                            col=int(r.col),
+                            value=float(r.value),
+                            unit=str(r.unit),
+                        )
+
+                # Extract & cache anything we actually computed this run.
+                # Write to Excel only if the prefix was explicitly requested.
+
+                if "boundary_force" in allowed_needed and "boundary_force" in compute_needed:
+                    rows = extract_boundary_force_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="N")
+                    _cache_rows(rows)
                     if "boundary_force" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_moment" in allowed_needed:
-                    rows = extract_boundary_moment_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="N*mm",
-                    )
+                if "boundary_moment" in allowed_needed and "boundary_moment" in compute_needed:
+                    rows = extract_boundary_moment_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="N*mm")
+                    _cache_rows(rows)
                     if "boundary_moment" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_traction" in allowed_needed:
-                    rows = extract_boundary_traction_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="MPa",
-                    )
+                if "boundary_traction" in allowed_needed and "boundary_traction" in compute_needed:
+                    rows = extract_boundary_traction_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
+                    _cache_rows(rows)
                     if "boundary_traction" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_stress" in allowed_needed:
-                    rows = extract_boundary_stress_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="MPa",
-                    )
+                if "boundary_stress" in allowed_needed and "boundary_stress" in compute_needed:
+                    rows = extract_boundary_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
+                    _cache_rows(rows)
                     if "boundary_stress" in allowed_requested:
                         _add_rows(rows)
 
-                # Requested outputs
-                if "boundary_modulus" in allowed_requested:
-                    rows = extract_boundary_modulus_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="MPa",
-                    )
-                    _add_rows(rows)
+                if "boundary_modulus" in allowed_needed and "boundary_modulus" in compute_needed:
+                    rows = extract_boundary_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
+                    _cache_rows(rows)
+                    if "boundary_modulus" in allowed_requested:
+                        _add_rows(rows)
 
-                if "effective_youngs_modulus" in allowed_requested:
-                    rows = extract_effective_youngs_modulus_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="MPa",
-                    )
-                    _add_rows(rows)
+                if "boundary_modulus_ratio" in allowed_needed and "boundary_modulus_ratio" in compute_needed:
+                    rows = extract_boundary_modulus_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "boundary_modulus_ratio" in allowed_requested:
+                        _add_rows(rows)
 
-                if "effective_shear_modulus" in allowed_requested:
-                    rows = extract_effective_shear_modulus_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="MPa",
-                    )
-                    _add_rows(rows)
+                if "effective_youngs_modulus" in allowed_needed and "effective_youngs_modulus" in compute_needed:
+                    rows = extract_effective_youngs_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
+                    _cache_rows(rows)
+                    if "effective_youngs_modulus" in allowed_requested:
+                        _add_rows(rows)
 
-                if "specific_youngs_modulus" in allowed_requested:
-                    rows = extract_specific_youngs_modulus_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="MPa/(density)",
-                    )
-                    _add_rows(rows)
+                if "effective_shear_modulus" in allowed_needed and "effective_shear_modulus" in compute_needed:
+                    rows = extract_effective_shear_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
+                    _cache_rows(rows)
+                    if "effective_shear_modulus" in allowed_requested:
+                        _add_rows(rows)
 
-                if "specific_shear_modulus" in allowed_requested:
-                    rows = extract_specific_shear_modulus_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="MPa/(density)",
-                    )
-                    _add_rows(rows)
+                if "specific_youngs_modulus" in allowed_needed and "specific_youngs_modulus" in compute_needed:
+                    rows = extract_specific_youngs_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa/(density)")
+                    _cache_rows(rows)
+                    if "specific_youngs_modulus" in allowed_requested:
+                        _add_rows(rows)
 
-                if "boundary_touch_area" in allowed_requested:
-                    rows = extract_boundary_touch_area_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="mm^2",
-                    )
-                    _add_rows(rows)
+                if "specific_shear_modulus" in allowed_needed and "specific_shear_modulus" in compute_needed:
+                    rows = extract_specific_shear_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa/(density)")
+                    _cache_rows(rows)
+                    if "specific_shear_modulus" in allowed_requested:
+                        _add_rows(rows)
 
-                if "contact_traction" in allowed_needed:
-                    rows = extract_contact_traction_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="MPa",
-                    )
+                if "boundary_touch_area" in allowed_needed and "boundary_touch_area" in compute_needed:
+                    rows = extract_boundary_touch_area_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^2")
+                    _cache_rows(rows)
+                    if "boundary_touch_area" in allowed_requested:
+                        _add_rows(rows)
+
+                if "boundary_touch_area_ratio" in allowed_needed and "boundary_touch_area_ratio" in compute_needed:
+                    rows = extract_boundary_touch_area_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "boundary_touch_area_ratio" in allowed_requested:
+                        _add_rows(rows)
+
+                if "contact_traction" in allowed_needed and "contact_traction" in compute_needed:
+                    rows = extract_contact_traction_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
+                    _cache_rows(rows)
                     if "contact_traction" in allowed_requested:
                         _add_rows(rows)
 
-                if "contact_stress" in allowed_requested:
-                    rows = extract_contact_stress_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="MPa",
-                    )
-                    _add_rows(rows)
+                if "contact_stress" in allowed_needed and "contact_stress" in compute_needed:
+                    rows = extract_contact_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
+                    _cache_rows(rows)
+                    if "contact_stress" in allowed_requested:
+                        _add_rows(rows)
 
-                if "volume" in allowed_requested:
-                    rows = extract_volume_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="mm^3",
-                    )
-                    _add_rows(rows)
+                if "volume" in allowed_needed and "volume" in compute_needed:
+                    rows = extract_volume_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^3")
+                    _cache_rows(rows)
+                    if "volume" in allowed_requested:
+                        _add_rows(rows)
 
-                if "mass" in allowed_requested:
-                    rows = extract_mass_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="kg",
-                    )
-                    _add_rows(rows)
+                if "mass" in allowed_needed and "mass" in compute_needed:
+                    rows = extract_mass_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="kg")
+                    _cache_rows(rows)
+                    if "mass" in allowed_requested:
+                        _add_rows(rows)
 
-                if "volume_stress" in allowed_needed:
-                    rows = extract_volume_stress_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="MPa*mm^3",
-                    )
+                if "volume_stress" in allowed_needed and "volume_stress" in compute_needed:
+                    rows = extract_volume_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa*mm^3")
+                    _cache_rows(rows)
                     if "volume_stress" in allowed_requested:
                         _add_rows(rows)
 
-                if "volume_avg_stress" in allowed_requested:
-                    rows = extract_volume_avg_stress_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="MPa",
-                    )
-                    _add_rows(rows)
+                if "volume_avg_stress" in allowed_needed and "volume_avg_stress" in compute_needed:
+                    rows = extract_volume_avg_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
+                    _cache_rows(rows)
+                    if "volume_avg_stress" in allowed_requested:
+                        _add_rows(rows)
 
-                if "volume_energy" in allowed_needed:
-                    rows = extract_volume_energy_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="J",
-                    )
+                if "volume_energy" in allowed_needed and "volume_energy" in compute_needed:
+                    rows = extract_volume_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="J")
+                    _cache_rows(rows)
                     if "volume_energy" in allowed_requested:
                         _add_rows(rows)
 
-                if "volume_avg_energy" in allowed_requested:
-                    rows = extract_volume_avg_energy_rows(
-                        ctx=ctx,
-                        mapdl=mapdl,
-                        case_hash=case_hash,
-                        unit="J/mm^3",
-                    )
-                    _add_rows(rows)
+                if "volume_avg_energy" in allowed_needed and "volume_avg_energy" in compute_needed:
+                    rows = extract_volume_avg_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="J/mm^3")
+                    _cache_rows(rows)
+                    if "volume_avg_energy" in allowed_requested:
+                        _add_rows(rows)
+
+                # Modal outputs (mode 1..20)
+                for i in range(1, 21):
+                    key = f"res_freq_{i}"
+                    if key in allowed_needed and key in compute_needed:
+                        rows = extract_resonant_frequency_rows(
+                            ctx=ctx,
+                            mapdl=mapdl,
+                            case_hash=case_hash,
+                            mode_index=i,
+                            unit="Hz",
+                        )
+                        _cache_rows(rows)
+                        if key in allowed_requested:
+                            _add_rows(rows)
+
+                    key = f"part_factor_{i}"
+                    if key in allowed_needed and key in compute_needed:
+                        rows = extract_participation_factor_rows(
+                            ctx=ctx,
+                            mapdl=mapdl,
+                            case_hash=case_hash,
+                            mode_index=i,
+                            unit="-",
+                        )
+                        _cache_rows(rows)
+                        if key in allowed_requested:
+                            _add_rows(rows)
+
+                    key = f"eff_modal_mass_{i}"
+                    if key in allowed_needed and key in compute_needed:
+                        rows = extract_effective_modal_mass_rows(
+                            ctx=ctx,
+                            mapdl=mapdl,
+                            case_hash=case_hash,
+                            mode_index=i,
+                            unit="kg",
+                        )
+                        _cache_rows(rows)
+                        if key in allowed_requested:
+                            _add_rows(rows)
+
+                # Persist cache for this case (including intermediates).
+                save_post_cache(cache_path, cache)
 
                 # Upsert this case immediately: overwrite existing keys, append new.
                 if case_rows:

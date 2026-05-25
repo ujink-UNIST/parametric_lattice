@@ -24,6 +24,7 @@ OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     # Mesh-derived (computed in Python). No MAPDL dependency.
     "boundary_touch_area": (),
     "boundary_touch_area_ratio": ("boundary_touch_area",),
+    "boundary_modulus_ratio": ("boundary_modulus",),
     # Contact traction/stress: derived in Python (boundary_force normalized by touch area).
     "contact_traction": ("boundary_force", "boundary_touch_area"),
     "contact_stress": ("contact_traction",),
