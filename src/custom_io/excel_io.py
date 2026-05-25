@@ -27,6 +27,7 @@ from core.parameters.sim_case import (
     SimCase,
 )
 from custom_io.apdl_io import mapdl_session, run_commands, write_apdl_macro
+from custom_io.ui_heartbeat import UIHeartbeat
 from custom_io.excel_read import (
     read_float,
     read_int,
@@ -418,6 +419,8 @@ def run_cases(
     inputs: tuple[SimCase, ...],
     save_intermediate: bool = False,
 ):
+    hb = UIHeartbeat(book)
+
     cfg = get_path_config()
     base_run_dir = cfg.results_root / "case"
     case_artifacts_root = cfg.artifacts_root / "case"
@@ -440,10 +443,12 @@ def run_cases(
                 book,
                 _status_range_for_input_row(book, int(sim_case.row_idx)),
             )
+            hb.tick()
 
         for sim_case in inputs:
             status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
             _set_status_running(book, status_cell)
+            hb.tick()
 
             case_key = sim_case.to_string()
             case_hash = build_case_hash(case_key)
@@ -463,9 +468,7 @@ def run_cases(
                     },
                     ensure_ascii=False,
                     indent=2,
-                    default=lambda o: (
-                        o.tolist() if hasattr(o, "tolist") else vars(o)
-                    ),
+                    default=lambda o: (o.tolist() if hasattr(o, "tolist") else vars(o)),
                 ),
                 encoding="utf-8",
             )
@@ -539,7 +542,9 @@ def run_cases(
                 from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
                 from custom_io.lgf_io import import_lgf
 
-                lattice = lgf_to_lattice(import_lgf(sim_case.pre_mesh_spec.geometry.cell_name))
+                lattice = lgf_to_lattice(
+                    import_lgf(sim_case.pre_mesh_spec.geometry.cell_name)
+                )
                 unit_cell = lattice_to_unit_cell(lattice)
 
                 pipeline = (
@@ -562,7 +567,9 @@ def run_cases(
                 from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
                 from custom_io.lgf_io import import_lgf
 
-                lattice = lgf_to_lattice(import_lgf(sim_case.pre_mesh_spec.geometry.cell_name))
+                lattice = lgf_to_lattice(
+                    import_lgf(sim_case.pre_mesh_spec.geometry.cell_name)
+                )
                 unit_cell = lattice_to_unit_cell(lattice)
 
                 pipeline = (
@@ -576,7 +583,11 @@ def run_cases(
                         sim_case.pre_mesh_spec.profile,
                         sim_case.pre_mesh_spec.meshing,
                     )
-                    + ((export_mesh_db(sim_case) + export_mesh_cdb(sim_case)) if save_intermediate else ())
+                    + (
+                        (export_mesh_db(sim_case) + export_mesh_cdb(sim_case))
+                        if save_intermediate
+                        else ()
+                    )
                     + material_commands(sim_case.post_mesh_spec.material)
                     + setup_commands(
                         unit_cell,
@@ -642,6 +653,8 @@ def run_postprocess(
     inputs: tuple[SimCase, ...],
     output_header: Header,
 ) -> None:
+    hb = UIHeartbeat(book)
+
     """Run postprocessing for the given cases (long-format t_out).
 
     Output table is expected to be named `t_out` (preferred) or `t_output`.
@@ -693,7 +706,10 @@ def run_postprocess(
     from post.boundary_stress_command import extract_boundary_stress_rows
     from post.boundary_modulus_command import extract_boundary_modulus_rows
     from post.boundary_touch_area_command import extract_boundary_touch_area_rows
-    from post.contact_command import extract_contact_stress_rows, extract_contact_traction_rows
+    from post.contact_command import (
+        extract_contact_stress_rows,
+        extract_contact_traction_rows,
+    )
     from post.volume_command import extract_volume_rows
     from post.effective_moduli_command import (
         extract_effective_shear_modulus_rows,
@@ -716,7 +732,7 @@ def run_postprocess(
 
     output_table: Table = find_table(book, _OUTPUT_TABLE)
 
-    all_rows: list[dict[str, Any]] = []
+    # We upsert to t_out incrementally per case for better UI responsiveness.
 
     # Keep a single MAPDL session open and switch working directory per case.
     session_dir = base_run_dir / "__mapdl_post_session"
@@ -725,7 +741,10 @@ def run_postprocess(
 
     try:
         for sim_case in inputs:
-            _set_status_pending(book, _status_range_for_input_row(book, int(sim_case.row_idx)))
+            _set_status_pending(
+                book, _status_range_for_input_row(book, int(sim_case.row_idx))
+            )
+            hb.tick()
 
         with mapdl_session(
             run_location=str(session_dir),
@@ -736,10 +755,13 @@ def run_postprocess(
             for sim_case in inputs:
                 status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
                 _set_status_running(book, status_cell)
+                hb.tick()
 
                 sim_type = str(sim_case.post_mesh_spec.setup.sim_type)
                 allowed_needed: dict[str, int] = {
-                    p: n for p, n in needed.items() if is_post_output_allowed(p, sim_type)
+                    p: n
+                    for p, n in needed.items()
+                    if is_post_output_allowed(p, sim_type)
                 }
                 if not allowed_needed:
                     _set_status_done(book, status_cell)
@@ -777,7 +799,10 @@ def run_postprocess(
                     run_commands(mapdl, pipeline)
                 except Exception:
                     _set_status_fail(book, status_cell)
+                    hb.tick(force=True)
                     raise
+
+                hb.tick()
 
                 ctx = PostprocessContext(sim_case=sim_case, needed=allowed_needed)
 
@@ -785,11 +810,13 @@ def run_postprocess(
 
                 meta = sim_case_meta(sim_case)
 
+                case_rows: list[dict[str, Any]] = []
+
                 def _add_rows(rs):
                     for r in rs:
                         d = r.as_dict()
                         d.update(meta)
-                        all_rows.append(d)
+                        case_rows.append(d)
 
                 # Intermediates (computed if needed by the dependency graph).
                 if "boundary_force" in allowed_needed:
@@ -962,14 +989,16 @@ def run_postprocess(
                     )
                     _add_rows(rows)
 
-                _set_status_done(book, status_cell)
+                # Upsert this case immediately: overwrite existing keys, append new.
+                if case_rows:
+                    upsert_long_rows(
+                        table=output_table,
+                        rows=case_rows,
+                        required_columns=T_OUT_COLUMNS + META_COLUMNS,
+                    )
+                    hb.tick(force=True)
 
-        # Upsert extracted rows: overwrite existing keys, append new.
-        upsert_long_rows(
-            table=output_table,
-            rows=all_rows,
-            required_columns=T_OUT_COLUMNS + META_COLUMNS,
-        )
+                _set_status_done(book, status_cell)
 
     except Exception as e:
         print(f"Error: {e}")

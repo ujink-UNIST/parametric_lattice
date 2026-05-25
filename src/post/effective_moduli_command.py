@@ -11,7 +11,7 @@ These are derived in Python from boundary_modulus (= boundary_stress / strain).
 - effective_shear_modulus: scalar modulus for shear cases xy/yz/xz.
   Uses sigma_ij = 2 G epsilon_ij.
   Output columns (t_out col):
-    1 -> XY, 2 -> YZ, 3 -> XZ
+    4 -> YZ, 5 -> XZ, 6 -> XY
 
 Row index is always the load-case index derived from sim_type (xx..xy -> 1..6).
 """
@@ -97,10 +97,12 @@ def extract_effective_shear_modulus_rows(
     # Only for shear cases.
     # Map sim_type -> (boundary_modulus col, output col)
     # boundary_modulus col ordering: [xx,yy,zz,yz,xz,xy]
+    # We align output cols with boundary_stress convention:
+    #   col 4 -> YZ, col 5 -> XZ, col 6 -> XY
     shear_map = {
-        "xy": (6, 1),
-        "yz": (4, 2),
-        "xz": (5, 3),
+        "yz": (4, 4),
+        "xz": (5, 5),
+        "xy": (6, 6),
     }
     info = shear_map.get(sim_type)
     if info is None:

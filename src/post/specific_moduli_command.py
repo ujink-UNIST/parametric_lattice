@@ -12,7 +12,7 @@ t_out:
   row = sim_type index (1..6)
   col matches the effective modulus col:
     - youngs: X=1,Y=2,Z=3
-    - shear:  XY=1,YZ=2,XZ=3
+    - shear:  YZ=4,XZ=5,XY=6
 """
 
 from typing import List
