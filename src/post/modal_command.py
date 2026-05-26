@@ -48,9 +48,9 @@ def build_modal_participation_commands_(ctx: PostprocessContext, *, mode_index: 
     return (
         apdl_command("", f"post: part_factor_{i}"),
         apdl_command(f"SET,1,{i}", "select mode"),
-        apdl_command(f"*GET,pp_part_factor_{i}_X,MODE,{i},FACT,X", "PX"),
-        apdl_command(f"*GET,pp_part_factor_{i}_Y,MODE,{i},FACT,Y", "PY"),
-        apdl_command(f"*GET,pp_part_factor_{i}_Z,MODE,{i},FACT,Z", "PZ"),
+        apdl_command(f"*GET,pp_part_factor_{i}_X,MODE,{i},PFACT,X", "PX"),
+        apdl_command(f"*GET,pp_part_factor_{i}_Y,MODE,{i},PFACT,Y", "PY"),
+        apdl_command(f"*GET,pp_part_factor_{i}_Z,MODE,{i},PFACT,Z", "PZ"),
         apdl_command("SET,LAST", "restore"),
     )
 
