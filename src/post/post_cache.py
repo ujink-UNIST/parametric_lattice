@@ -184,23 +184,25 @@ def required_keys_static(prefix: str, *, sim_type: str, row: int) -> set[str]:
     return {make_key(prefix, row, c) for c in cols if c is not None}
 
 
-def required_keys_modal(prefix: str, *, mode_index: int) -> set[str]:
+def required_keys_modal(prefix: str, *, sim_type: str, mode_index: int) -> set[str]:
     """Return required keys for a modal prefix (res_freq_*, part_factor_*, eff_modal_mass_*).
 
-    Note: cache category is stored without the trailing _<mode> because row already
-    encodes the mode index.
+    Cache category is stored without the trailing _<mode> because row encodes the
+    mode index. For modal_ff, we append suffix '_ff' to the category.
     """
 
     p = str(prefix)
+    sim_type_l = str(sim_type).strip().lower()
+    suf = "_ff" if sim_type_l == "modal_ff" else ""
 
     if p.startswith("res_freq_"):
-        cat = "res_freq"
+        cat = f"res_freq{suf}"
         cols = (1,)
     elif p.startswith("part_factor_"):
-        cat = "part_factor"
+        cat = f"part_factor{suf}"
         cols = (1, 2, 3)
     elif p.startswith("eff_modal_mass_"):
-        cat = "eff_modal_mass"
+        cat = f"eff_modal_mass{suf}"
         cols = (1, 2, 3)
     else:
         cat = p

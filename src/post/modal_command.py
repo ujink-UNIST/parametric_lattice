@@ -80,7 +80,8 @@ def extract_resonant_frequency_rows(
     mode_index: int,
     unit: str = "Hz",
 ) -> List[TOutRow]:
-    _ = ctx
+    sim_type = str(ctx.sim_case.post_mesh_spec.setup.sim_type).strip().lower()
+    cat = "res_freq_ff" if sim_type == "modal_ff" else "res_freq"
     i = int(mode_index)
     try:
         f = float(mapdl.parameters[f"pp_res_freq_{i}"])
@@ -94,7 +95,7 @@ def extract_resonant_frequency_rows(
         TOutRow(
             index=case_index,
             hash=case_hash,
-            category="res_freq",
+            category=cat,
             row=i,
             col=1,
             value=float(f),
@@ -111,7 +112,8 @@ def extract_participation_factor_rows(
     mode_index: int,
     unit: str = "-",
 ) -> List[TOutRow]:
-    _ = ctx
+    sim_type = str(ctx.sim_case.post_mesh_spec.setup.sim_type).strip().lower()
+    cat = "part_factor_ff" if sim_type == "modal_ff" else "part_factor"
     i = int(mode_index)
     try:
         x = float(mapdl.parameters[f"pp_part_factor_{i}_X"])
@@ -129,7 +131,7 @@ def extract_participation_factor_rows(
             TOutRow(
                 index=case_index,
                 hash=case_hash,
-                category="part_factor",
+                category=cat,
                 row=i,
                 col=col,
                 value=float(v),
@@ -147,7 +149,8 @@ def extract_effective_modal_mass_rows(
     mode_index: int,
     unit: str = "kg",
 ) -> List[TOutRow]:
-    _ = ctx
+    sim_type = str(ctx.sim_case.post_mesh_spec.setup.sim_type).strip().lower()
+    cat = "eff_modal_mass_ff" if sim_type == "modal_ff" else "eff_modal_mass"
     i = int(mode_index)
     try:
         x = float(mapdl.parameters[f"pp_eff_modal_mass_{i}_X"])
@@ -165,7 +168,7 @@ def extract_effective_modal_mass_rows(
             TOutRow(
                 index=case_index,
                 hash=case_hash,
-                category="eff_modal_mass",
+                category=cat,
                 row=i,
                 col=col,
                 value=float(v),

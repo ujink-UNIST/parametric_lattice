@@ -834,7 +834,7 @@ def run_postprocess(
                         except Exception:
                             mode_index = 0
                         if mode_index > 0:
-                            req_keys = required_keys_modal(p, mode_index=mode_index)
+                            req_keys = required_keys_modal(p, sim_type=sim_type_l, mode_index=mode_index)
                     else:
                         if static_row is not None:
                             req_keys = required_keys_static(p, sim_type=sim_type_l, row=int(static_row))
