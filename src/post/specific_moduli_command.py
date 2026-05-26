@@ -13,6 +13,9 @@ t_out:
   col matches the effective modulus col:
     - youngs: X=1,Y=2,Z=3
     - shear:  YZ=4,XZ=5,XY=6
+
+Unit convention (when using N-mm-s with density in kg/mm^3):
+  (MPa) / (kg/mm^3) = (N/mm^2) / (kg/mm^3) = mm^2/s^2
 """
 
 from typing import List
@@ -41,7 +44,7 @@ def extract_specific_youngs_modulus_rows(
     ctx: PostprocessContext,
     mapdl: Mapdl,
     case_hash: str,
-    unit: str = "(MPa)/(density)",
+    unit: str = "mm^2/s^2",
 ) -> List[TOutRow]:
     rho = float(ctx.sim_case.post_mesh_spec.material.density)
     if rho == 0.0:
@@ -72,7 +75,7 @@ def extract_specific_shear_modulus_rows(
     ctx: PostprocessContext,
     mapdl: Mapdl,
     case_hash: str,
-    unit: str = "(MPa)/(density)",
+    unit: str = "mm^2/s^2",
 ) -> List[TOutRow]:
     rho = float(ctx.sim_case.post_mesh_spec.material.density)
     if rho == 0.0:

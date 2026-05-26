@@ -204,7 +204,7 @@ def extract_volume_energy_rows(
     ctx: PostprocessContext,
     mapdl: Mapdl,
     case_hash: str,
-    unit: str = "J",
+    unit: str = "mJ",
 ) -> List[TOutRow]:
     sim_type = str(ctx.sim_case.post_mesh_spec.setup.sim_type).strip().lower()
     out_row = _SIM_TYPE_TO_ROW.get(sim_type)
@@ -238,7 +238,7 @@ def extract_volume_avg_energy_rows(
     ctx: PostprocessContext,
     mapdl: Mapdl,
     case_hash: str,
-    unit: str = "J/mm^3",
+    unit: str = "mJ/mm^3",
 ) -> List[TOutRow]:
     sim_type = str(ctx.sim_case.post_mesh_spec.setup.sim_type).strip().lower()
     out_row = _SIM_TYPE_TO_ROW.get(sim_type)

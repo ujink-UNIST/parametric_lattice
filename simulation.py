@@ -23,6 +23,7 @@ from excel_integration.simulation_actions import (
     run_all_action,
     run_selected_action,
     run_selected_postprocess_action,
+    sync_post_cache_action,
 )
 
 
@@ -61,6 +62,11 @@ def sub_run_all() -> None:
 def sub_run_selected_postprocess() -> None:
     book = xw.Book.caller()
     _run_with_spinner(book, lambda: run_selected_postprocess_action(book))
+
+
+def sub_sync_post_cache() -> None:
+    book = xw.Book.caller()
+    _run_with_spinner(book, lambda: sync_post_cache_action(book))
 
 
 def sub_open_lattice_file() -> None:

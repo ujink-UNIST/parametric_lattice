@@ -8,8 +8,8 @@ This cache is stored per case_hash:
 Key convention (string):
   "{category}|{row}|{col}"
 
+Cache stores numeric values only (no unit). Units are resolved at runtime.
 We store *all* computed categories, including intermediate outputs.
-Excel t_out writing can still be restricted to requested categories.
 """
 
 import json
@@ -30,22 +30,68 @@ def make_key(category: str, row: int, col: int) -> str:
 class PostCache:
     case_hash: str
     sim_case_meta: dict[str, Any]
-    rows: dict[str, dict[str, Any]]  # key -> {value, unit}
+    rows: dict[str, float]  # key -> value
     schema_version: int = SCHEMA_VERSION
     post_logic_version: int = POST_LOGIC_VERSION
 
-    def upsert(self, *, category: str, row: int, col: int, value: float, unit: str) -> None:
-        self.rows[make_key(category, row, col)] = {"value": float(value), "unit": str(unit)}
+    def upsert(self, *, category: str, row: int, col: int, value: float) -> None:
+        self.rows[make_key(category, row, col)] = float(value)
 
     def has(self, *, category: str, row: int, col: int) -> bool:
         return make_key(category, row, col) in self.rows
 
 
+def parse_key(key: str) -> tuple[str, int, int]:
+    """Parse a cache key into (category,row,col)."""
+
+    parts = str(key).split("|")
+    if len(parts) != 3:
+        raise ValueError(f"Invalid cache key: {key!r}")
+    cat = parts[0]
+    row = int(parts[1])
+    col = int(parts[2])
+    return cat, row, col
+
+
+def _parse_post_cache_obj(obj: Any, *, case_hash: str) -> PostCache:
+    if not isinstance(obj, dict):
+        return PostCache(case_hash=case_hash, sim_case_meta={}, rows={})
+
+    sim_case_meta = obj.get("sim_case_meta")
+    if not isinstance(sim_case_meta, dict):
+        sim_case_meta = {}
+
+    rows = obj.get("rows")
+    if not isinstance(rows, dict):
+        rows = {}
+
+    rows2: dict[str, float] = {}
+    for k, v in rows.items():
+        if not isinstance(k, str):
+            continue
+        # Backward-compatible: accept {value, unit} dict from older caches.
+        if isinstance(v, dict) and "value" in v:
+            try:
+                rows2[k] = float(v.get("value"))
+            except Exception:
+                continue
+        else:
+            try:
+                rows2[k] = float(v)
+            except Exception:
+                continue
+
+    return PostCache(case_hash=case_hash, sim_case_meta=sim_case_meta, rows=rows2)
+
+
 def load_post_cache(path: Path, *, case_hash: str) -> PostCache:
+    """Strict loader: enforces schema_version/post_logic_version match."""
+
     if not path.exists():
         return PostCache(case_hash=case_hash, sim_case_meta={}, rows={})
 
     obj = json.loads(path.read_text(encoding="utf-8"))
+
     if not isinstance(obj, dict):
         return PostCache(case_hash=case_hash, sim_case_meta={}, rows={})
 
@@ -57,21 +103,29 @@ def load_post_cache(path: Path, *, case_hash: str) -> PostCache:
     if str(obj.get("case_hash", "")) != str(case_hash):
         return PostCache(case_hash=case_hash, sim_case_meta={}, rows={})
 
-    sim_case_meta = obj.get("sim_case_meta")
-    if not isinstance(sim_case_meta, dict):
-        sim_case_meta = {}
+    return _parse_post_cache_obj(obj, case_hash=case_hash)
 
-    rows = obj.get("rows")
-    if not isinstance(rows, dict):
-        rows = {}
 
-    # Ensure rows values are dict-like
-    rows2: dict[str, dict[str, Any]] = {}
-    for k, v in rows.items():
-        if isinstance(k, str) and isinstance(v, dict):
-            rows2[k] = v
+def load_post_cache_lenient(path: Path, *, case_hash: str) -> PostCache:
+    """Lenient loader: ignores version fields and attempts best-effort parse.
 
-    return PostCache(case_hash=case_hash, sim_case_meta=sim_case_meta, rows=rows2)
+    Intended for a "sync/upgrade" macro that rewrites old caches into the latest
+    schema.
+    """
+
+    if not path.exists():
+        return PostCache(case_hash=case_hash, sim_case_meta={}, rows={})
+
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return PostCache(case_hash=case_hash, sim_case_meta={}, rows={})
+
+    c = _parse_post_cache_obj(obj, case_hash=case_hash)
+    # Upgrade versions
+    c.schema_version = SCHEMA_VERSION
+    c.post_logic_version = POST_LOGIC_VERSION
+    return c
 
 
 def save_post_cache(path: Path, cache: PostCache) -> None:

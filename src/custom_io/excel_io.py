@@ -894,7 +894,6 @@ def run_postprocess(
                             row=int(r.row),
                             col=int(r.col),
                             value=float(r.value),
-                            unit=str(r.unit),
                         )
 
                 # Extract & cache anything we actually computed this run.
@@ -949,13 +948,13 @@ def run_postprocess(
                         _add_rows(rows)
 
                 if "specific_youngs_modulus" in allowed_needed and "specific_youngs_modulus" in compute_needed:
-                    rows = extract_specific_youngs_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa/(density)")
+                    rows = extract_specific_youngs_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^2/s^2")
                     _cache_rows(rows)
                     if "specific_youngs_modulus" in allowed_requested:
                         _add_rows(rows)
 
                 if "specific_shear_modulus" in allowed_needed and "specific_shear_modulus" in compute_needed:
-                    rows = extract_specific_shear_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa/(density)")
+                    rows = extract_specific_shear_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^2/s^2")
                     _cache_rows(rows)
                     if "specific_shear_modulus" in allowed_requested:
                         _add_rows(rows)
@@ -1009,13 +1008,13 @@ def run_postprocess(
                         _add_rows(rows)
 
                 if "volume_energy" in allowed_needed and "volume_energy" in compute_needed:
-                    rows = extract_volume_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="J")
+                    rows = extract_volume_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ")
                     _cache_rows(rows)
                     if "volume_energy" in allowed_requested:
                         _add_rows(rows)
 
                 if "volume_avg_energy" in allowed_needed and "volume_avg_energy" in compute_needed:
-                    rows = extract_volume_avg_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="J/mm^3")
+                    rows = extract_volume_avg_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
                     _cache_rows(rows)
                     if "volume_avg_energy" in allowed_requested:
                         _add_rows(rows)
@@ -1064,11 +1063,33 @@ def run_postprocess(
                 # Persist cache for this case (including intermediates).
                 save_post_cache(cache_path, cache)
 
-                # Upsert this case immediately: overwrite existing keys, append new.
-                if case_rows:
+                # Upsert this case immediately from cache (ensures units are always current).
+                from post.post_cache import parse_key
+                from post.unit_resolver import unit_for_category
+
+                case_index = int(ctx.sim_case.row_idx) + 1
+                sync_rows: list[dict[str, Any]] = []
+                for k, v in cache.rows.items():
+                    try:
+                        cat, r_i, c_i = parse_key(k)
+                    except Exception:
+                        continue
+                    d = {
+                        "index": case_index,
+                        "hash": case_hash,
+                        "category": str(cat),
+                        "row": int(r_i),
+                        "col": int(c_i),
+                        "value": float(v),
+                        "unit": unit_for_category(str(cat)),
+                    }
+                    d.update(meta)
+                    sync_rows.append(d)
+
+                if sync_rows:
                     upsert_long_rows(
                         table=output_table,
-                        rows=case_rows,
+                        rows=sync_rows,
                         required_columns=T_OUT_COLUMNS + META_COLUMNS,
                     )
                     hb.tick(force=True)
