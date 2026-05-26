@@ -185,13 +185,25 @@ def required_keys_static(prefix: str, *, sim_type: str, row: int) -> set[str]:
 
 
 def required_keys_modal(prefix: str, *, mode_index: int) -> set[str]:
-    if prefix.startswith("res_freq_"):
+    """Return required keys for a modal prefix (res_freq_*, part_factor_*, eff_modal_mass_*).
+
+    Note: cache category is stored without the trailing _<mode> because row already
+    encodes the mode index.
+    """
+
+    p = str(prefix)
+
+    if p.startswith("res_freq_"):
+        cat = "res_freq"
         cols = (1,)
-    elif prefix.startswith("part_factor_"):
+    elif p.startswith("part_factor_"):
+        cat = "part_factor"
         cols = (1, 2, 3)
-    elif prefix.startswith("eff_modal_mass_"):
+    elif p.startswith("eff_modal_mass_"):
+        cat = "eff_modal_mass"
         cols = (1, 2, 3)
     else:
+        cat = p
         cols = (1,)
 
-    return {make_key(prefix, mode_index, c) for c in cols}
+    return {make_key(cat, mode_index, c) for c in cols}

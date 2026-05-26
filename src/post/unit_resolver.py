@@ -34,11 +34,11 @@ def unit_for_category(category: str) -> str:
         return "mm^2/s^2"
 
     # Modal categories are enumerated with suffixes.
-    if c.startswith("res_freq_"):
+    if c == "res_freq" or c.startswith("res_freq_"):
         return "Hz"
-    if c.startswith("part_factor_"):
+    if c == "part_factor" or c.startswith("part_factor_"):
         return "-"
-    if c.startswith("eff_modal_mass_"):
+    if c == "eff_modal_mass" or c.startswith("eff_modal_mass_"):
         return "kg"
 
     # Fallback: unknown.

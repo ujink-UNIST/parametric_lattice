@@ -94,7 +94,7 @@ def extract_resonant_frequency_rows(
         TOutRow(
             index=case_index,
             hash=case_hash,
-            category=f"res_freq_{i}",
+            category="res_freq",
             row=i,
             col=1,
             value=float(f),
@@ -129,7 +129,7 @@ def extract_participation_factor_rows(
             TOutRow(
                 index=case_index,
                 hash=case_hash,
-                category=f"part_factor_{i}",
+                category="part_factor",
                 row=i,
                 col=col,
                 value=float(v),
@@ -165,7 +165,7 @@ def extract_effective_modal_mass_rows(
             TOutRow(
                 index=case_index,
                 hash=case_hash,
-                category=f"eff_modal_mass_{i}",
+                category="eff_modal_mass",
                 row=i,
                 col=col,
                 value=float(v),
