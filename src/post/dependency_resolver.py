@@ -1,11 +1,11 @@
-"""Dependency resolution utilities for postprocess outputs.
+"""Dependency resolution utilities for post outputs.
+
+Mirrors :mod:`postprocess.dependency_resolver`.
 
 Given a set of requested output prefixes and a dependency graph
 (`OUTPUT_DEPENDENCIES`), this module can:
 - expand the request to include all prerequisites
 - compute an execution order that respects dependencies (topological order)
-
-This is intended to be used by `postprocess.pipeline`.
 """
 
 from __future__ import annotations

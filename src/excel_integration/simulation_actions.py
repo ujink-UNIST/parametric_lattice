@@ -17,6 +17,7 @@ from custom_io.excel_io import (
     run_selected_postprocess,
     selected_input_indices,
 )
+from custom_io.post_cache_sync import sync_post_cache_to_t_out
 from custom_io.geometry_io import geometry_hash
 from custom_io.mesh_io import mesh_hash
 from custom_io.path_config import get_path_config
@@ -103,6 +104,10 @@ def run_all_action(book: xw.Book) -> None:
 def run_selected_postprocess_action(book: xw.Book) -> None:
     selected_indices = selected_input_indices(book)
     run_selected_postprocess(book, selected_indices)
+
+
+def sync_post_cache_action(book: xw.Book) -> None:
+    sync_post_cache_to_t_out(book)
 
 
 def open_lattice_file_action(repo_root: Path, book: xw.Book) -> None:

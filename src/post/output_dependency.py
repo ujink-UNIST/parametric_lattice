@@ -1,13 +1,7 @@
-"""Postprocess output dependency graph.
+"""Post output dependency graph.
 
-Defines dependencies between postprocess output *prefixes*.
-
-Example:
-  boundary_stress depends on boundary_traction
-
-This is intended to be used by the postprocess pipeline to:
-- expand requested outputs to include prerequisites
-- derive a safe computation order (topological sort)
+This mirrors :mod:`postprocess.output_dependency` so the new post/ pipeline can
+resolve prerequisites and compute a safe execution order.
 
 Only the dependency declarations live here.
 """
@@ -24,9 +18,13 @@ OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "boundary_modulus_ratio": ("boundary_modulus",),
     "effective_youngs_modulus": ("boundary_modulus",),
     "effective_shear_modulus": ("boundary_modulus",),
+    # Specific moduli (divide by density)
+    "specific_youngs_modulus": ("effective_youngs_modulus",),
+    "specific_shear_modulus": ("effective_shear_modulus",),
     # Mesh-derived (computed in Python). No MAPDL dependency.
     "boundary_touch_area": (),
     "boundary_touch_area_ratio": ("boundary_touch_area",),
+    "boundary_modulus_ratio": ("boundary_modulus",),
     # Contact traction/stress: derived in Python (boundary_force normalized by touch area).
     "contact_traction": ("boundary_force", "boundary_touch_area"),
     "contact_stress": ("contact_traction",),
@@ -39,7 +37,8 @@ OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     # Volume averages require both the sum and the total volume.
     "volume_avg_stress": ("volume_stress", "volume"),
     "volume_avg_energy": ("volume_energy", "volume"),
-    # Intermediate outputs (not written to Excel). Kept here so they can
+    "mass": ("volume",),
+    # Intermediate outputs (not written to t_out). Kept here so they can
     # participate in prefix expansion/toposort if requested.
     "elem_sene": (),
     "node_sene": (),

@@ -115,6 +115,8 @@ EXCEL_NA = _ExcelNAType()
 class WriteQueue:
     """Queue table writes and flush them in larger blocks.
 
+    This is used for the legacy wide-format `t_output` table.
+
     - Keyed by output table row_idx0 (0-based within data_body_range).
     - Only rows present in the queue are written during flush.
 
