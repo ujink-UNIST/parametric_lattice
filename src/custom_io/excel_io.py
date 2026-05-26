@@ -657,7 +657,7 @@ def run_postprocess(
 
     """Run postprocessing for the given cases (long-format t_out).
 
-    Output table is expected to be named `t_out` (preferred) or `t_output`.
+    Output table is expected to be named `t_out`.
 
     Extraction produces a flat list of :class:`post.row.TOutRow` and writes them
     into the output table with columns:
