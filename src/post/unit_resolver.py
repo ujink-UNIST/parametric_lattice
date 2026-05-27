@@ -14,15 +14,13 @@ def unit_for_category(category: str) -> str:
         return "N"
     if c in {"boundary_moment"}:
         return "N*mm"
-    if c in {"boundary_traction", "boundary_stress", "boundary_modulus", "effective_youngs_modulus", "effective_shear_modulus", "contact_traction", "contact_stress", "stress_vol_avg"}:
+    if c in {"boundary_traction", "boundary_stress", "boundary_modulus", "effective_youngs_modulus", "effective_shear_modulus", "effective_bulk_modulus", "contact_traction", "contact_stress", "stress_vol_avg"}:
         return "MPa"
     if c in {
         "boundary_modulus_ratio",
         "boundary_touch_area_ratio",
         "effective_youngs_modulus_ratio",
         "effective_shear_modulus_ratio",
-        "part_factor",
-        "part_factor_ff",
     }:
         return "-"
     if c in {"boundary_touch_area"}:
@@ -42,12 +40,12 @@ def unit_for_category(category: str) -> str:
     if c in {"specific_youngs_modulus", "specific_shear_modulus"}:
         return "mm^2/s^2"
 
-    # Modal categories are enumerated with suffixes.
-    if c in {"res_freq", "res_freq_ff"} or c.startswith("res_freq_"):
+    # Modal categories.
+    if c in {"modal.res_freq", "modal_ff.res_freq"}:
         return "Hz"
-    if c in {"part_factor", "part_factor_ff"} or c.startswith("part_factor_"):
+    if c in {"modal.part_factor", "modal_ff.part_factor"}:
         return "-"
-    if c in {"eff_modal_mass", "eff_modal_mass_ff"} or c.startswith("eff_modal_mass_"):
+    if c in {"modal.eff_modal_mass", "modal_ff.eff_modal_mass"}:
         return "kg"
 
     # Fallback: unknown.

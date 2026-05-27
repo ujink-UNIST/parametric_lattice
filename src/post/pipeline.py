@@ -15,6 +15,7 @@ from post.effective_moduli_command import (
     build_effective_shear_modulus_commands_,
     build_effective_youngs_modulus_commands_,
 )
+from post.effective_bulk_modulus_command import build_effective_bulk_modulus_commands_
 from post.mass_command import build_mass_commands_
 from post.specific_moduli_command import (
     build_specific_shear_modulus_commands_,
@@ -63,6 +64,7 @@ _HANDLERS: dict[str, PostHandler] = {
     "boundary_modulus_ratio": _noop,
     "effective_youngs_modulus": build_effective_youngs_modulus_commands_,
     "effective_shear_modulus": build_effective_shear_modulus_commands_,
+    "effective_bulk_modulus": build_effective_bulk_modulus_commands_,
     "specific_youngs_modulus": build_specific_youngs_modulus_commands_,
     "specific_shear_modulus": build_specific_shear_modulus_commands_,
     "effective_youngs_modulus_ratio": build_effective_youngs_modulus_ratio_commands_,

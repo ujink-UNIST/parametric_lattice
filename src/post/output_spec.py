@@ -14,7 +14,8 @@ from __future__ import annotations
 _SIM_TYPES_MODAL: frozenset[str] = frozenset({"modal", "modal_ff"})
 _SIM_TYPES_STATIC_NORMAL: frozenset[str] = frozenset({"xx", "yy", "zz"})
 _SIM_TYPES_STATIC_SHEAR: frozenset[str] = frozenset({"xy", "yz", "xz"})
-_SIM_TYPES_STATIC: frozenset[str] = _SIM_TYPES_STATIC_NORMAL | _SIM_TYPES_STATIC_SHEAR
+_SIM_TYPES_STATIC_BULK: frozenset[str] = frozenset({"xyz"})
+_SIM_TYPES_STATIC: frozenset[str] = _SIM_TYPES_STATIC_NORMAL | _SIM_TYPES_STATIC_SHEAR | _SIM_TYPES_STATIC_BULK
 _SIM_TYPES_ALL: frozenset[str] = _SIM_TYPES_MODAL | _SIM_TYPES_STATIC
 
 # Output availability by simulation type.
@@ -41,6 +42,7 @@ POST_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
     "boundary_touch_area_ratio": _SIM_TYPES_STATIC,
     "effective_youngs_modulus": _SIM_TYPES_STATIC_NORMAL,
     "effective_shear_modulus": _SIM_TYPES_STATIC_SHEAR,
+    "effective_bulk_modulus": _SIM_TYPES_STATIC_BULK,
     "specific_youngs_modulus": _SIM_TYPES_STATIC_NORMAL,
     "specific_shear_modulus": _SIM_TYPES_STATIC_SHEAR,
     "effective_youngs_modulus_ratio": _SIM_TYPES_STATIC_NORMAL,

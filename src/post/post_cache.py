@@ -116,6 +116,14 @@ def _migrate_legacy_category_names(rows: dict[str, float]) -> dict[str, float]:
         "volume_avg_stress": "stress_vol_avg",
         "volume_energy": "energy_sum",
         "volume_avg_energy": "energy_vol_avg",
+
+        # Modal categories (row encodes mode index)
+        "res_freq": "modal.res_freq",
+        "res_freq_ff": "modal_ff.res_freq",
+        "part_factor": "modal.part_factor",
+        "part_factor_ff": "modal_ff.part_factor",
+        "eff_modal_mass": "modal.eff_modal_mass",
+        "eff_modal_mass_ff": "modal_ff.eff_modal_mass",
     }
 
     out: dict[str, float] = {}
@@ -199,6 +207,8 @@ def required_keys_static(prefix: str, *, sim_type: str, row: int) -> set[str]:
         cols = range(1, 4)
     elif prefix in {"energy_sum", "energy_vol_avg"}:
         cols = (1,)
+    elif prefix in {"effective_bulk_modulus"}:
+        cols = (1,)
     elif prefix in {"effective_youngs_modulus", "specific_youngs_modulus"}:
         # Only one of (X,Y,Z) is populated depending on sim_type.
         c = {"xx": 1, "yy": 2, "zz": 3}.get(sim_type_l)
@@ -225,13 +235,13 @@ def required_keys_modal(prefix: str, *, sim_type: str, mode_index: int) -> set[s
     suf = "_ff" if sim_type_l == "modal_ff" else ""
 
     if p.startswith("res_freq_"):
-        cat = f"res_freq{suf}"
+        cat = f"modal{suf}.res_freq"
         cols = (1,)
     elif p.startswith("part_factor_"):
-        cat = f"part_factor{suf}"
+        cat = f"modal{suf}.part_factor"
         cols = (1, 2, 3)
     elif p.startswith("eff_modal_mass_"):
-        cat = f"eff_modal_mass{suf}"
+        cat = f"modal{suf}.eff_modal_mass"
         cols = (1, 2, 3)
     else:
         cat = p

@@ -16,6 +16,7 @@ _SIM_TYPE_TO_ROW: dict[str, int] = {
     "yz": 4,
     "xz": 5,
     "xy": 6,
+    "xyz": 7,
 }
 
 

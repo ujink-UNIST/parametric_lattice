@@ -17,6 +17,18 @@ class SetupParams:
             f"__Substeps:{self.n_substeps}"
         )
 
+    def to_string_without_sim_type(self) -> str:
+        """Stable key for grouping cases across sim_type.
+
+        Example use: grouping {xx,yy,zz} cases for derived properties like
+        Poisson's ratio.
+        """
+
+        return (
+            f"Strain:{self.strain:.16e}"
+            f"__Substeps:{self.n_substeps}"
+        )
+
 
 def build_setup_params(
     input_header: Tuple[str, ...], row: Tuple[Any, ...]

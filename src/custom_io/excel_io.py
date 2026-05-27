@@ -693,6 +693,7 @@ def run_postprocess(
         "boundary_modulus_ratio": 1,
         "effective_youngs_modulus": 1,
         "effective_shear_modulus": 1,
+        "effective_bulk_modulus": 1,
         "effective_youngs_modulus_ratio": 1,
         "effective_shear_modulus_ratio": 1,
         "specific_youngs_modulus": 1,
@@ -732,6 +733,7 @@ def run_postprocess(
         extract_effective_shear_modulus_rows,
         extract_effective_youngs_modulus_rows,
     )
+    from post.effective_bulk_modulus_command import extract_effective_bulk_modulus_rows
     from post.mass_command import extract_mass_rows
     from post.volume_fraction_command import extract_volume_fraction_rows
     from post.specific_moduli_command import (
@@ -953,6 +955,12 @@ def run_postprocess(
                     rows = extract_effective_shear_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
                     if "effective_shear_modulus" in allowed_requested:
+                        _add_rows(rows)
+
+                if "effective_bulk_modulus" in allowed_needed and "effective_bulk_modulus" in compute_needed:
+                    rows = extract_effective_bulk_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
+                    _cache_rows(rows)
+                    if "effective_bulk_modulus" in allowed_requested:
                         _add_rows(rows)
 
                 if "effective_youngs_modulus_ratio" in allowed_needed and "effective_youngs_modulus_ratio" in compute_needed:

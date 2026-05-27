@@ -18,6 +18,7 @@ OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "boundary_modulus_ratio": ("boundary_modulus",),
     "effective_youngs_modulus": ("boundary_modulus",),
     "effective_shear_modulus": ("boundary_modulus",),
+    "effective_bulk_modulus": ("boundary_stress",),
     # Specific moduli (divide by density)
     "specific_youngs_modulus": ("effective_youngs_modulus",),
     "specific_shear_modulus": ("effective_shear_modulus",),
