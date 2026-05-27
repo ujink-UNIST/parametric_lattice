@@ -680,10 +680,11 @@ def run_postprocess(
         # Static (default)
         "volume": 1,
         "mass": 1,
-        "volume_stress": 1,
-        "volume_energy": 1,
-        "volume_avg_stress": 1,
-        "volume_avg_energy": 1,
+        "volume_fraction": 1,
+        "stress_vol_sum": 1,
+        "energy_sum": 1,
+        "stress_vol_avg": 1,
+        "energy_vol_avg": 1,
         "boundary_force": 1,
         "boundary_moment": 1,
         "boundary_traction": 1,
@@ -692,6 +693,8 @@ def run_postprocess(
         "boundary_modulus_ratio": 1,
         "effective_youngs_modulus": 1,
         "effective_shear_modulus": 1,
+        "effective_youngs_modulus_ratio": 1,
+        "effective_shear_modulus_ratio": 1,
         "specific_youngs_modulus": 1,
         "specific_shear_modulus": 1,
         "boundary_touch_area": 1,
@@ -730,9 +733,14 @@ def run_postprocess(
         extract_effective_youngs_modulus_rows,
     )
     from post.mass_command import extract_mass_rows
+    from post.volume_fraction_command import extract_volume_fraction_rows
     from post.specific_moduli_command import (
         extract_specific_shear_modulus_rows,
         extract_specific_youngs_modulus_rows,
+    )
+    from post.effective_moduli_ratio_command import (
+        extract_effective_shear_modulus_ratio_rows,
+        extract_effective_youngs_modulus_ratio_rows,
     )
     from post.volume_metrics_command import (
         extract_volume_avg_energy_rows,
@@ -947,6 +955,18 @@ def run_postprocess(
                     if "effective_shear_modulus" in allowed_requested:
                         _add_rows(rows)
 
+                if "effective_youngs_modulus_ratio" in allowed_needed and "effective_youngs_modulus_ratio" in compute_needed:
+                    rows = extract_effective_youngs_modulus_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "effective_youngs_modulus_ratio" in allowed_requested:
+                        _add_rows(rows)
+
+                if "effective_shear_modulus_ratio" in allowed_needed and "effective_shear_modulus_ratio" in compute_needed:
+                    rows = extract_effective_shear_modulus_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "effective_shear_modulus_ratio" in allowed_requested:
+                        _add_rows(rows)
+
                 if "specific_youngs_modulus" in allowed_needed and "specific_youngs_modulus" in compute_needed:
                     rows = extract_specific_youngs_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^2/s^2")
                     _cache_rows(rows)
@@ -995,28 +1015,34 @@ def run_postprocess(
                     if "mass" in allowed_requested:
                         _add_rows(rows)
 
-                if "volume_stress" in allowed_needed and "volume_stress" in compute_needed:
+                if "volume_fraction" in allowed_needed and "volume_fraction" in compute_needed:
+                    rows = extract_volume_fraction_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "volume_fraction" in allowed_requested:
+                        _add_rows(rows)
+
+                if "stress_vol_sum" in allowed_needed and "stress_vol_sum" in compute_needed:
                     rows = extract_volume_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa*mm^3")
                     _cache_rows(rows)
-                    if "volume_stress" in allowed_requested:
+                    if "stress_vol_sum" in allowed_requested:
                         _add_rows(rows)
 
-                if "volume_avg_stress" in allowed_needed and "volume_avg_stress" in compute_needed:
+                if "stress_vol_avg" in allowed_needed and "stress_vol_avg" in compute_needed:
                     rows = extract_volume_avg_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "volume_avg_stress" in allowed_requested:
+                    if "stress_vol_avg" in allowed_requested:
                         _add_rows(rows)
 
-                if "volume_energy" in allowed_needed and "volume_energy" in compute_needed:
+                if "energy_sum" in allowed_needed and "energy_sum" in compute_needed:
                     rows = extract_volume_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ")
                     _cache_rows(rows)
-                    if "volume_energy" in allowed_requested:
+                    if "energy_sum" in allowed_requested:
                         _add_rows(rows)
 
-                if "volume_avg_energy" in allowed_needed and "volume_avg_energy" in compute_needed:
+                if "energy_vol_avg" in allowed_needed and "energy_vol_avg" in compute_needed:
                     rows = extract_volume_avg_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
                     _cache_rows(rows)
-                    if "volume_avg_energy" in allowed_requested:
+                    if "energy_vol_avg" in allowed_requested:
                         _add_rows(rows)
 
                 # Modal outputs (mode 1..20)

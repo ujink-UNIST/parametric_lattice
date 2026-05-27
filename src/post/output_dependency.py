@@ -21,6 +21,8 @@ OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     # Specific moduli (divide by density)
     "specific_youngs_modulus": ("effective_youngs_modulus",),
     "specific_shear_modulus": ("effective_shear_modulus",),
+    "effective_youngs_modulus_ratio": ("effective_youngs_modulus",),
+    "effective_shear_modulus_ratio": ("effective_shear_modulus",),
     # Mesh-derived (computed in Python). No MAPDL dependency.
     "boundary_touch_area": (),
     "boundary_touch_area_ratio": ("boundary_touch_area",),
@@ -32,12 +34,13 @@ OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     **{f"res_freq_{i}": () for i in range(1, 21)},
     **{f"part_factor_{i}": () for i in range(1, 21)},
     **{f"eff_modal_mass_{i}": () for i in range(1, 21)},
-    "volume_stress": (),
-    "volume_energy": (),
+    "stress_vol_sum": (),
+    "energy_sum": (),
     # Volume averages require both the sum and the total volume.
-    "volume_avg_stress": ("volume_stress", "volume"),
-    "volume_avg_energy": ("volume_energy", "volume"),
+    "stress_vol_avg": ("stress_vol_sum", "volume"),
+    "energy_vol_avg": ("energy_sum", "volume"),
     "mass": ("volume",),
+    "volume_fraction": ("volume",),
     # Intermediate outputs (not written to t_out). Kept here so they can
     # participate in prefix expansion/toposort if requested.
     "elem_sene": (),

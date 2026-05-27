@@ -164,12 +164,14 @@ def required_keys_static(prefix: str, *, sim_type: str, row: int) -> set[str]:
         "boundary_modulus",
         "boundary_modulus_ratio",
         "contact_stress",
-        "volume_stress",
-        "volume_avg_stress",
+        "stress_vol_sum",
+        "stress_vol_avg",
     }:
         cols = range(1, 7)
     elif prefix in {"boundary_touch_area", "boundary_touch_area_ratio"}:
         cols = range(1, 4)
+    elif prefix in {"energy_sum", "energy_vol_avg"}:
+        cols = (1,)
     elif prefix in {"effective_youngs_modulus", "specific_youngs_modulus"}:
         # Only one of (X,Y,Z) is populated depending on sim_type.
         c = {"xx": 1, "yy": 2, "zz": 3}.get(sim_type_l)

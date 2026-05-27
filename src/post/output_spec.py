@@ -26,6 +26,7 @@ POST_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
     # Volume: static only
     "volume": _SIM_TYPES_STATIC,
     "mass": _SIM_TYPES_STATIC,
+    "volume_fraction": _SIM_TYPES_STATIC,
     # Modal-only outputs
     **{f"res_freq_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
     **{f"part_factor_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
@@ -42,14 +43,16 @@ POST_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
     "effective_shear_modulus": _SIM_TYPES_STATIC_SHEAR,
     "specific_youngs_modulus": _SIM_TYPES_STATIC_NORMAL,
     "specific_shear_modulus": _SIM_TYPES_STATIC_SHEAR,
+    "effective_youngs_modulus_ratio": _SIM_TYPES_STATIC_NORMAL,
+    "effective_shear_modulus_ratio": _SIM_TYPES_STATIC_SHEAR,
     "boundary_touch_area": _SIM_TYPES_STATIC,
     "boundary_touch_area_ratio": _SIM_TYPES_STATIC,
     "contact_traction": _SIM_TYPES_STATIC,
     "contact_stress": _SIM_TYPES_STATIC,
-    "volume_stress": _SIM_TYPES_STATIC,
-    "volume_avg_stress": _SIM_TYPES_STATIC,
-    "volume_energy": _SIM_TYPES_STATIC,
-    "volume_avg_energy": _SIM_TYPES_STATIC,
+    "stress_vol_sum": _SIM_TYPES_STATIC,
+    "stress_vol_avg": _SIM_TYPES_STATIC,
+    "energy_sum": _SIM_TYPES_STATIC,
+    "energy_vol_avg": _SIM_TYPES_STATIC,
 }
 
 

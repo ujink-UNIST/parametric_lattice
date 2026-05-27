@@ -14,19 +14,28 @@ def unit_for_category(category: str) -> str:
         return "N"
     if c in {"boundary_moment"}:
         return "N*mm"
-    if c in {"boundary_traction", "boundary_stress", "boundary_modulus", "effective_youngs_modulus", "effective_shear_modulus", "contact_traction", "contact_stress", "volume_avg_stress"}:
+    if c in {"boundary_traction", "boundary_stress", "boundary_modulus", "effective_youngs_modulus", "effective_shear_modulus", "contact_traction", "contact_stress", "stress_vol_avg"}:
         return "MPa"
-    if c in {"boundary_modulus_ratio", "boundary_touch_area_ratio", "part_factor"}:
+    if c in {
+        "boundary_modulus_ratio",
+        "boundary_touch_area_ratio",
+        "effective_youngs_modulus_ratio",
+        "effective_shear_modulus_ratio",
+        "part_factor",
+        "part_factor_ff",
+    }:
         return "-"
     if c in {"boundary_touch_area"}:
         return "mm^2"
     if c in {"volume"}:
         return "mm^3"
-    if c in {"volume_stress"}:
+    if c in {"volume_fraction"}:
+        return "-"
+    if c in {"stress_vol_sum"}:
         return "MPa*mm^3"
-    if c in {"volume_energy"}:
+    if c in {"energy_sum"}:
         return "mJ"
-    if c in {"volume_avg_energy"}:
+    if c in {"energy_vol_avg"}:
         return "mJ/mm^3"
     if c in {"mass"}:
         return "kg"

@@ -102,7 +102,11 @@ def run_all_action(book: xw.Book) -> None:
 
 
 def run_selected_postprocess_action(book: xw.Book) -> None:
+    msg = ExcelMessenger(book)
     selected_indices = selected_input_indices(book)
+    if not selected_indices:
+        msg.info("t_input에서 열(row)을 선택한 뒤 실행하세요.")
+        return
     run_selected_postprocess(book, selected_indices)
 
 
