@@ -19,7 +19,9 @@ from typing import Any, Iterable
 
 
 SCHEMA_VERSION = 1
-POST_LOGIC_VERSION = 1
+# Increment this whenever category naming / post semantics change in a way that
+# should invalidate old cached numeric results.
+POST_LOGIC_VERSION = 2
 
 
 def make_key(category: str, row: int, col: int) -> str:
@@ -106,6 +108,27 @@ def load_post_cache(path: Path, *, case_hash: str) -> PostCache:
     return _parse_post_cache_obj(obj, case_hash=case_hash)
 
 
+def _migrate_legacy_category_names(rows: dict[str, float]) -> dict[str, float]:
+    """Migrate legacy category names to the current naming convention."""
+
+    rename = {
+        "volume_stress": "stress_vol_sum",
+        "volume_avg_stress": "stress_vol_avg",
+        "volume_energy": "energy_sum",
+        "volume_avg_energy": "energy_vol_avg",
+    }
+
+    out: dict[str, float] = {}
+    for k, v in rows.items():
+        try:
+            cat, r, c = parse_key(k)
+        except Exception:
+            continue
+        cat2 = rename.get(cat, cat)
+        out[make_key(cat2, r, c)] = float(v)
+    return out
+
+
 def load_post_cache_lenient(path: Path, *, case_hash: str) -> PostCache:
     """Lenient loader: ignores version fields and attempts best-effort parse.
 
@@ -122,6 +145,10 @@ def load_post_cache_lenient(path: Path, *, case_hash: str) -> PostCache:
         return PostCache(case_hash=case_hash, sim_case_meta={}, rows={})
 
     c = _parse_post_cache_obj(obj, case_hash=case_hash)
+
+    # Migrate legacy category names (e.g., volume_* -> stress/energy naming).
+    c.rows = _migrate_legacy_category_names(c.rows)
+
     # Upgrade versions
     c.schema_version = SCHEMA_VERSION
     c.post_logic_version = POST_LOGIC_VERSION
