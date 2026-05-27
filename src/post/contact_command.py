@@ -98,7 +98,7 @@ def extract_contact_traction_rows(
                 TOutRow(
                     index=case_index,
                     hash=case_hash,
-                    category="contact_traction",
+                    category="traction.contact.value",
                     row=int(out_row),
                     col=int(_col_index(face_axis, comp)),
                     value=v,
@@ -162,7 +162,7 @@ def extract_contact_stress_rows(
             TOutRow(
                 index=case_index,
                 hash=case_hash,
-                category="contact_stress",
+                category="stress.contact.value",
                 row=int(out_row),
                 col=int(col),
                 value=float(v),

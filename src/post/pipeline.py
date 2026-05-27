@@ -45,38 +45,40 @@ def _noop(_: PostprocessContext) -> ApdlCommands:
     return ()
 
 
+
+
 _HANDLERS: dict[str, PostHandler] = {
     # Identifiers / externally-provided
-    "index": _noop,
-    "hash": _noop,
+    "id.index": _noop,
+    "id.hash": _noop,
 
     # MAPDL-computed outputs (implemented in post/)
-    "boundary_force": build_boundary_force_commands_,
-    "boundary_moment": build_boundary_moment_commands_,
-    "boundary_traction": build_boundary_traction_commands_,
-    "boundary_stress": build_boundary_stress_commands_,
-    "volume": build_volume_commands_,
-    "stress_vol_sum": build_volume_stress_commands_,
-    "energy_sum": build_volume_energy_commands_,
+    "force.boundary.value": build_boundary_force_commands_,
+    "moment.boundary.value": build_boundary_moment_commands_,
+    "traction.boundary.value": build_boundary_traction_commands_,
+    "stress.boundary.value": build_boundary_stress_commands_,
+    "volume.solid.value": build_volume_commands_,
+    "stress.volume.sum": build_volume_stress_commands_,
+    "energy.strain.total": build_volume_energy_commands_,
 
     # Python-derived outputs (no MAPDL commands)
-    "boundary_modulus": _noop,
-    "boundary_modulus_ratio": _noop,
-    "effective_youngs_modulus": build_effective_youngs_modulus_commands_,
-    "effective_shear_modulus": build_effective_shear_modulus_commands_,
-    "effective_bulk_modulus": build_effective_bulk_modulus_commands_,
-    "specific_youngs_modulus": build_specific_youngs_modulus_commands_,
-    "specific_shear_modulus": build_specific_shear_modulus_commands_,
-    "effective_youngs_modulus_ratio": build_effective_youngs_modulus_ratio_commands_,
-    "effective_shear_modulus_ratio": build_effective_shear_modulus_ratio_commands_,
-    "boundary_touch_area": _noop,
-    "boundary_touch_area_ratio": _noop,
-    "contact_traction": _noop,
-    "contact_stress": _noop,
-    "stress_vol_avg": _noop,
-    "energy_vol_avg": _noop,
-    "mass": build_mass_commands_,
-    "volume_fraction": build_volume_fraction_commands_,
+    "modulus.boundary.value": _noop,
+    "modulus.boundary.ratio": _noop,
+    "modulus.effective.youngs": build_effective_youngs_modulus_commands_,
+    "modulus.effective.shear": build_effective_shear_modulus_commands_,
+    "modulus.effective.bulk": build_effective_bulk_modulus_commands_,
+    "modulus.effective.youngs.specific": build_specific_youngs_modulus_commands_,
+    "modulus.effective.shear.specific": build_specific_shear_modulus_commands_,
+    "modulus.effective.youngs.ratio": build_effective_youngs_modulus_ratio_commands_,
+    "modulus.effective.shear.ratio": build_effective_shear_modulus_ratio_commands_,
+    "area.boundary_contact.value": _noop,
+    "area.boundary_contact.ratio": _noop,
+    "traction.contact.value": _noop,
+    "stress.contact.value": _noop,
+    "stress.volume.avg": _noop,
+    "energy.strain_density.avg": _noop,
+    "mass.solid.value": build_mass_commands_,
+    "volume_fraction.cell.value": build_volume_fraction_commands_,
 
     # Modal outputs
     **{

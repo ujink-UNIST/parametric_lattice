@@ -73,7 +73,7 @@ def extract_effective_youngs_modulus_rows(
         TOutRow(
             index=case_index,
             hash=case_hash,
-            category="effective_youngs_modulus",
+            category="modulus.effective.youngs",
             row=int(out_row),
             col=int(out_col),
             value=float(val),
@@ -132,7 +132,7 @@ def extract_effective_shear_modulus_rows(
         TOutRow(
             index=case_index,
             hash=case_hash,
-            category="effective_shear_modulus",
+            category="modulus.effective.shear",
             row=int(out_row),
             col=int(out_col),
             value=float(g),

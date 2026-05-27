@@ -78,7 +78,7 @@ def extract_effective_bulk_modulus_rows(
         TOutRow(
             index=case_index,
             hash=case_hash,
-            category="effective_bulk_modulus",
+            category="modulus.effective.bulk",
             row=int(out_row),
             col=1,
             value=float(K),

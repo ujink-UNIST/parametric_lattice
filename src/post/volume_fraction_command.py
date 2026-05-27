@@ -60,7 +60,7 @@ def extract_volume_fraction_rows(
         TOutRow(
             index=case_index,
             hash=case_hash,
-            category="volume_fraction",
+            category="volume_fraction.cell.value",
             row=int(out_row),
             col=1,
             value=float(vf),

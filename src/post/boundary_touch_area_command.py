@@ -64,7 +64,7 @@ def extract_boundary_touch_area_rows(
             TOutRow(
                 index=case_index,
                 hash=case_hash,
-                category="boundary_touch_area",
+                category="area.boundary_contact.value",
                 row=int(out_row),
                 col=int(col),
                 value=float(v),

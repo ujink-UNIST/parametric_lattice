@@ -678,30 +678,30 @@ def run_postprocess(
     # TODO: make this configurable from Excel once the schema is finalized.
     requested_needed: dict[str, int] = {
         # Static (default)
-        "volume": 1,
-        "mass": 1,
-        "volume_fraction": 1,
-        "stress_vol_sum": 1,
-        "energy_sum": 1,
-        "stress_vol_avg": 1,
-        "energy_vol_avg": 1,
-        "boundary_force": 1,
-        "boundary_moment": 1,
-        "boundary_traction": 1,
-        "boundary_stress": 1,
-        "boundary_modulus": 1,
-        "boundary_modulus_ratio": 1,
-        "effective_youngs_modulus": 1,
-        "effective_shear_modulus": 1,
-        "effective_bulk_modulus": 1,
-        "effective_youngs_modulus_ratio": 1,
-        "effective_shear_modulus_ratio": 1,
-        "specific_youngs_modulus": 1,
-        "specific_shear_modulus": 1,
-        "boundary_touch_area": 1,
-        "boundary_touch_area_ratio": 1,
-        "contact_traction": 1,
-        "contact_stress": 1,
+        "volume.solid.value": 1,
+        "mass.solid.value": 1,
+        "volume_fraction.cell.value": 1,
+        "stress.volume.sum": 1,
+        "energy.strain.total": 1,
+        "stress.volume.avg": 1,
+        "energy.strain_density.avg": 1,
+        "force.boundary.value": 1,
+        "moment.boundary.value": 1,
+        "traction.boundary.value": 1,
+        "stress.boundary.value": 1,
+        "modulus.boundary.value": 1,
+        "modulus.boundary.ratio": 1,
+        "modulus.effective.youngs": 1,
+        "modulus.effective.shear": 1,
+        "modulus.effective.bulk": 1,
+        "modulus.effective.youngs.ratio": 1,
+        "modulus.effective.shear.ratio": 1,
+        "modulus.effective.youngs.specific": 1,
+        "modulus.effective.shear.specific": 1,
+        "area.boundary_contact.value": 1,
+        "area.boundary_contact.ratio": 1,
+        "traction.contact.value": 1,
+        "stress.contact.value": 1,
         # Modal (default)
         **{f"res_freq_{i}": 1 for i in range(1, 21)},
         **{f"part_factor_{i}": 1 for i in range(1, 21)},
@@ -909,148 +909,148 @@ def run_postprocess(
                 # Extract & cache anything we actually computed this run.
                 # Write to Excel only if the prefix was explicitly requested.
 
-                if "boundary_force" in allowed_needed and "boundary_force" in compute_needed:
+                if "force.boundary.value" in allowed_needed and "force.boundary.value" in compute_needed:
                     rows = extract_boundary_force_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="N")
                     _cache_rows(rows)
-                    if "boundary_force" in allowed_requested:
+                    if "force.boundary.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_moment" in allowed_needed and "boundary_moment" in compute_needed:
+                if "moment.boundary.value" in allowed_needed and "moment.boundary.value" in compute_needed:
                     rows = extract_boundary_moment_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="N*mm")
                     _cache_rows(rows)
-                    if "boundary_moment" in allowed_requested:
+                    if "moment.boundary.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_traction" in allowed_needed and "boundary_traction" in compute_needed:
+                if "traction.boundary.value" in allowed_needed and "traction.boundary.value" in compute_needed:
                     rows = extract_boundary_traction_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "boundary_traction" in allowed_requested:
+                    if "traction.boundary.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_stress" in allowed_needed and "boundary_stress" in compute_needed:
+                if "stress.boundary.value" in allowed_needed and "stress.boundary.value" in compute_needed:
                     rows = extract_boundary_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "boundary_stress" in allowed_requested:
+                    if "stress.boundary.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_modulus" in allowed_needed and "boundary_modulus" in compute_needed:
+                if "modulus.boundary.value" in allowed_needed and "modulus.boundary.value" in compute_needed:
                     rows = extract_boundary_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "boundary_modulus" in allowed_requested:
+                    if "modulus.boundary.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_modulus_ratio" in allowed_needed and "boundary_modulus_ratio" in compute_needed:
+                if "modulus.boundary.ratio" in allowed_needed and "modulus.boundary.ratio" in compute_needed:
                     rows = extract_boundary_modulus_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
                     _cache_rows(rows)
-                    if "boundary_modulus_ratio" in allowed_requested:
+                    if "modulus.boundary.ratio" in allowed_requested:
                         _add_rows(rows)
 
-                if "effective_youngs_modulus" in allowed_needed and "effective_youngs_modulus" in compute_needed:
+                if "modulus.effective.youngs" in allowed_needed and "modulus.effective.youngs" in compute_needed:
                     rows = extract_effective_youngs_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "effective_youngs_modulus" in allowed_requested:
+                    if "modulus.effective.youngs" in allowed_requested:
                         _add_rows(rows)
 
-                if "effective_shear_modulus" in allowed_needed and "effective_shear_modulus" in compute_needed:
+                if "modulus.effective.shear" in allowed_needed and "modulus.effective.shear" in compute_needed:
                     rows = extract_effective_shear_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "effective_shear_modulus" in allowed_requested:
+                    if "modulus.effective.shear" in allowed_requested:
                         _add_rows(rows)
 
-                if "effective_bulk_modulus" in allowed_needed and "effective_bulk_modulus" in compute_needed:
+                if "modulus.effective.bulk" in allowed_needed and "modulus.effective.bulk" in compute_needed:
                     rows = extract_effective_bulk_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "effective_bulk_modulus" in allowed_requested:
+                    if "modulus.effective.bulk" in allowed_requested:
                         _add_rows(rows)
 
-                if "effective_youngs_modulus_ratio" in allowed_needed and "effective_youngs_modulus_ratio" in compute_needed:
+                if "modulus.effective.youngs.ratio" in allowed_needed and "modulus.effective.youngs.ratio" in compute_needed:
                     rows = extract_effective_youngs_modulus_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
                     _cache_rows(rows)
-                    if "effective_youngs_modulus_ratio" in allowed_requested:
+                    if "modulus.effective.youngs.ratio" in allowed_requested:
                         _add_rows(rows)
 
-                if "effective_shear_modulus_ratio" in allowed_needed and "effective_shear_modulus_ratio" in compute_needed:
+                if "modulus.effective.shear.ratio" in allowed_needed and "modulus.effective.shear.ratio" in compute_needed:
                     rows = extract_effective_shear_modulus_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
                     _cache_rows(rows)
-                    if "effective_shear_modulus_ratio" in allowed_requested:
+                    if "modulus.effective.shear.ratio" in allowed_requested:
                         _add_rows(rows)
 
-                if "specific_youngs_modulus" in allowed_needed and "specific_youngs_modulus" in compute_needed:
+                if "modulus.effective.youngs.specific" in allowed_needed and "modulus.effective.youngs.specific" in compute_needed:
                     rows = extract_specific_youngs_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^2/s^2")
                     _cache_rows(rows)
-                    if "specific_youngs_modulus" in allowed_requested:
+                    if "modulus.effective.youngs.specific" in allowed_requested:
                         _add_rows(rows)
 
-                if "specific_shear_modulus" in allowed_needed and "specific_shear_modulus" in compute_needed:
+                if "modulus.effective.shear.specific" in allowed_needed and "modulus.effective.shear.specific" in compute_needed:
                     rows = extract_specific_shear_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^2/s^2")
                     _cache_rows(rows)
-                    if "specific_shear_modulus" in allowed_requested:
+                    if "modulus.effective.shear.specific" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_touch_area" in allowed_needed and "boundary_touch_area" in compute_needed:
+                if "area.boundary_contact.value" in allowed_needed and "area.boundary_contact.value" in compute_needed:
                     rows = extract_boundary_touch_area_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^2")
                     _cache_rows(rows)
-                    if "boundary_touch_area" in allowed_requested:
+                    if "area.boundary_contact.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_touch_area_ratio" in allowed_needed and "boundary_touch_area_ratio" in compute_needed:
+                if "area.boundary_contact.ratio" in allowed_needed and "area.boundary_contact.ratio" in compute_needed:
                     rows = extract_boundary_touch_area_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
                     _cache_rows(rows)
-                    if "boundary_touch_area_ratio" in allowed_requested:
+                    if "area.boundary_contact.ratio" in allowed_requested:
                         _add_rows(rows)
 
-                if "contact_traction" in allowed_needed and "contact_traction" in compute_needed:
+                if "traction.contact.value" in allowed_needed and "traction.contact.value" in compute_needed:
                     rows = extract_contact_traction_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "contact_traction" in allowed_requested:
+                    if "traction.contact.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "contact_stress" in allowed_needed and "contact_stress" in compute_needed:
+                if "stress.contact.value" in allowed_needed and "stress.contact.value" in compute_needed:
                     rows = extract_contact_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "contact_stress" in allowed_requested:
+                    if "stress.contact.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "volume" in allowed_needed and "volume" in compute_needed:
+                if "volume.solid.value" in allowed_needed and "volume.solid.value" in compute_needed:
                     rows = extract_volume_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^3")
                     _cache_rows(rows)
-                    if "volume" in allowed_requested:
+                    if "volume.solid.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "mass" in allowed_needed and "mass" in compute_needed:
+                if "mass.solid.value" in allowed_needed and "mass.solid.value" in compute_needed:
                     rows = extract_mass_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="kg")
                     _cache_rows(rows)
-                    if "mass" in allowed_requested:
+                    if "mass.solid.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "volume_fraction" in allowed_needed and "volume_fraction" in compute_needed:
+                if "volume_fraction.cell.value" in allowed_needed and "volume_fraction.cell.value" in compute_needed:
                     rows = extract_volume_fraction_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
                     _cache_rows(rows)
-                    if "volume_fraction" in allowed_requested:
+                    if "volume_fraction.cell.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "stress_vol_sum" in allowed_needed and "stress_vol_sum" in compute_needed:
+                if "stress.volume.sum" in allowed_needed and "stress.volume.sum" in compute_needed:
                     rows = extract_volume_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa*mm^3")
                     _cache_rows(rows)
-                    if "stress_vol_sum" in allowed_requested:
+                    if "stress.volume.sum" in allowed_requested:
                         _add_rows(rows)
 
-                if "stress_vol_avg" in allowed_needed and "stress_vol_avg" in compute_needed:
+                if "stress.volume.avg" in allowed_needed and "stress.volume.avg" in compute_needed:
                     rows = extract_volume_avg_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "stress_vol_avg" in allowed_requested:
+                    if "stress.volume.avg" in allowed_requested:
                         _add_rows(rows)
 
-                if "energy_sum" in allowed_needed and "energy_sum" in compute_needed:
+                if "energy.strain.total" in allowed_needed and "energy.strain.total" in compute_needed:
                     rows = extract_volume_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ")
                     _cache_rows(rows)
-                    if "energy_sum" in allowed_requested:
+                    if "energy.strain.total" in allowed_requested:
                         _add_rows(rows)
 
-                if "energy_vol_avg" in allowed_needed and "energy_vol_avg" in compute_needed:
+                if "energy.strain_density.avg" in allowed_needed and "energy.strain_density.avg" in compute_needed:
                     rows = extract_volume_avg_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
                     _cache_rows(rows)
-                    if "energy_vol_avg" in allowed_requested:
+                    if "energy.strain_density.avg" in allowed_requested:
                         _add_rows(rows)
 
                 # Modal outputs (mode 1..20)

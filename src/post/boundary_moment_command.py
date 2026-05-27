@@ -108,7 +108,7 @@ def extract_boundary_moment_rows(
                 TOutRow(
                     index=case_index,
                     hash=case_hash,
-                    category="boundary_moment",
+                    category="moment.boundary.value",
                     row=int(out_row),
                     col=int(_col_index(face_axis, comp)),
                     value=v,

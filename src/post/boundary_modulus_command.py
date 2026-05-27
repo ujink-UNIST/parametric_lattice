@@ -81,7 +81,7 @@ def extract_boundary_modulus_rows(
             TOutRow(
                 index=case_index,
                 hash=case_hash,
-                category="boundary_modulus",
+                category="modulus.boundary.value",
                 row=int(out_row),
                 col=int(col),
                 value=v,

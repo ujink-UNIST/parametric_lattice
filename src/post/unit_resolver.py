@@ -10,34 +10,50 @@ unit convention changes can be applied without cache invalidation.
 def unit_for_category(category: str) -> str:
     c = str(category)
 
-    if c in {"boundary_force"}:
+    # Identifiers
+    if c in {"id.index", "id.hash"}:
+        return ""
+
+    if c in {"force.boundary.value"}:
         return "N"
-    if c in {"boundary_moment"}:
+    if c in {"moment.boundary.value"}:
         return "N*mm"
-    if c in {"boundary_traction", "boundary_stress", "boundary_modulus", "effective_youngs_modulus", "effective_shear_modulus", "effective_bulk_modulus", "contact_traction", "contact_stress", "stress_vol_avg"}:
-        return "MPa"
+
     if c in {
-        "boundary_modulus_ratio",
-        "boundary_touch_area_ratio",
-        "effective_youngs_modulus_ratio",
-        "effective_shear_modulus_ratio",
+        "traction.boundary.value",
+        "stress.boundary.value",
+        "modulus.boundary.value",
+        "modulus.effective.youngs",
+        "modulus.effective.shear",
+        "modulus.effective.bulk",
+        "traction.contact.value",
+        "stress.contact.value",
+        "stress.volume.avg",
+    }:
+        return "MPa"
+
+    if c in {
+        "modulus.boundary.ratio",
+        "area.boundary_contact.ratio",
+        "modulus.effective.youngs.ratio",
+        "modulus.effective.shear.ratio",
+        "volume_fraction.cell.value",
     }:
         return "-"
-    if c in {"boundary_touch_area"}:
+
+    if c in {"area.boundary_contact.value"}:
         return "mm^2"
-    if c in {"volume"}:
+    if c in {"volume.solid.value"}:
         return "mm^3"
-    if c in {"volume_fraction"}:
-        return "-"
-    if c in {"stress_vol_sum"}:
+    if c in {"stress.volume.sum"}:
         return "MPa*mm^3"
-    if c in {"energy_sum"}:
+    if c in {"energy.strain.total"}:
         return "mJ"
-    if c in {"energy_vol_avg"}:
+    if c in {"energy.strain_density.avg"}:
         return "mJ/mm^3"
-    if c in {"mass"}:
+    if c in {"mass.solid.value"}:
         return "kg"
-    if c in {"specific_youngs_modulus", "specific_shear_modulus"}:
+    if c in {"modulus.effective.youngs.specific", "modulus.effective.shear.specific"}:
         return "mm^2/s^2"
 
     # Modal categories.

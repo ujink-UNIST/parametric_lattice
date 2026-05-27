@@ -62,7 +62,7 @@ def extract_volume_rows(
         TOutRow(
             index=case_index,
             hash=case_hash,
-            category="volume",
+            category="volume.solid.value",
             row=int(out_row),
             col=1,
             value=float(v),

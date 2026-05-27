@@ -157,7 +157,7 @@ def extract_volume_stress_rows(
     return _rows_from_vec6(
         case_index=case_index,
         case_hash=case_hash,
-        category="stress_vol_sum",
+        category="stress.volume.sum",
         out_row=int(out_row),
         vec6=vec6,
         unit=unit,
@@ -192,7 +192,7 @@ def extract_volume_avg_stress_rows(
     return _rows_from_vec6(
         case_index=case_index,
         case_hash=case_hash,
-        category="stress_vol_avg",
+        category="stress.volume.avg",
         out_row=int(out_row),
         vec6=avg6,
         unit=unit,
@@ -224,7 +224,7 @@ def extract_volume_energy_rows(
         TOutRow(
             index=case_index,
             hash=case_hash,
-            category="energy_sum",
+            category="energy.strain.total",
             row=int(out_row),
             col=1,
             value=float(e),
@@ -259,7 +259,7 @@ def extract_volume_avg_energy_rows(
         TOutRow(
             index=case_index,
             hash=case_hash,
-            category="energy_vol_avg",
+            category="energy.strain_density.avg",
             row=int(out_row),
             col=1,
             value=float(e / vol),

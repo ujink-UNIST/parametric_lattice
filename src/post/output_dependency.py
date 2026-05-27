@@ -10,42 +10,53 @@ from __future__ import annotations
 
 # key: output prefix
 # value: tuple of prerequisite output prefixes that must be computed first
+
+
 OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
-    "boundary_traction": ("boundary_force",),
-    "boundary_stress": ("boundary_traction",),
+    "traction.boundary.value": ("force.boundary.value",),
+    "stress.boundary.value": ("traction.boundary.value",),
+
     # Derived in Python but depends on boundary_stress being computed.
-    "boundary_modulus": ("boundary_stress",),
-    "boundary_modulus_ratio": ("boundary_modulus",),
-    "effective_youngs_modulus": ("boundary_modulus",),
-    "effective_shear_modulus": ("boundary_modulus",),
-    "effective_bulk_modulus": ("boundary_stress",),
+    "modulus.boundary.value": ("stress.boundary.value",),
+    "modulus.boundary.ratio": ("modulus.boundary.value",),
+
+    "modulus.effective.youngs": ("modulus.boundary.value",),
+    "modulus.effective.shear": ("modulus.boundary.value",),
+    "modulus.effective.bulk": ("stress.boundary.value",),
+
     # Specific moduli (divide by density)
-    "specific_youngs_modulus": ("effective_youngs_modulus",),
-    "specific_shear_modulus": ("effective_shear_modulus",),
-    "effective_youngs_modulus_ratio": ("effective_youngs_modulus",),
-    "effective_shear_modulus_ratio": ("effective_shear_modulus",),
+    "modulus.effective.youngs.specific": ("modulus.effective.youngs",),
+    "modulus.effective.shear.specific": ("modulus.effective.shear",),
+
+    "modulus.effective.youngs.ratio": ("modulus.effective.youngs",),
+    "modulus.effective.shear.ratio": ("modulus.effective.shear",),
+
     # Mesh-derived (computed in Python). No MAPDL dependency.
-    "boundary_touch_area": (),
-    "boundary_touch_area_ratio": ("boundary_touch_area",),
-    "boundary_modulus_ratio": ("boundary_modulus",),
+    "area.boundary_contact.value": (),
+    "area.boundary_contact.ratio": ("area.boundary_contact.value",),
+
     # Contact traction/stress: derived in Python (boundary_force normalized by touch area).
-    "contact_traction": ("boundary_force", "boundary_touch_area"),
-    "contact_stress": ("contact_traction",),
-    # Modal-only
+    "traction.contact.value": ("force.boundary.value", "area.boundary_contact.value"),
+    "stress.contact.value": ("traction.contact.value",),
+
+    # Modal-only (kept as-is; categories are modal.* and handled elsewhere)
     **{f"res_freq_{i}": () for i in range(1, 21)},
     **{f"part_factor_{i}": () for i in range(1, 21)},
     **{f"eff_modal_mass_{i}": () for i in range(1, 21)},
-    "stress_vol_sum": (),
-    "energy_sum": (),
+
+    "stress.volume.sum": (),
+    "energy.strain.total": (),
     # Volume averages require both the sum and the total volume.
-    "stress_vol_avg": ("stress_vol_sum", "volume"),
-    "energy_vol_avg": ("energy_sum", "volume"),
-    "mass": ("volume",),
-    "volume_fraction": ("volume",),
+    "stress.volume.avg": ("stress.volume.sum", "volume.solid.value"),
+    "energy.strain_density.avg": ("energy.strain.total", "volume.solid.value"),
+
+    "mass.solid.value": ("volume.solid.value",),
+    "volume_fraction.cell.value": ("volume.solid.value",),
+
     # Intermediate outputs (not written to t_out). Kept here so they can
     # participate in prefix expansion/toposort if requested.
     "elem_sene": (),
     "node_sene": (),
     "node_volmass": (),
-    "volume": (),
+    "volume.solid.value": (),
 }
