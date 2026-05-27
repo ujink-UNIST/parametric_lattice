@@ -20,8 +20,13 @@ from post.specific_moduli_command import (
     build_specific_shear_modulus_commands_,
     build_specific_youngs_modulus_commands_,
 )
+from post.effective_moduli_ratio_command import (
+    build_effective_shear_modulus_ratio_commands_,
+    build_effective_youngs_modulus_ratio_commands_,
+)
 from post.volume_command import build_volume_commands_
 from post.volume_metrics_command import build_volume_energy_commands_, build_volume_stress_commands_
+from post.volume_fraction_command import build_volume_fraction_commands_
 from post.modal_command import (
     build_modal_effective_mass_commands_,
     build_modal_participation_commands_,
@@ -50,8 +55,8 @@ _HANDLERS: dict[str, PostHandler] = {
     "boundary_traction": build_boundary_traction_commands_,
     "boundary_stress": build_boundary_stress_commands_,
     "volume": build_volume_commands_,
-    "volume_stress": build_volume_stress_commands_,
-    "volume_energy": build_volume_energy_commands_,
+    "stress_vol_sum": build_volume_stress_commands_,
+    "energy_sum": build_volume_energy_commands_,
 
     # Python-derived outputs (no MAPDL commands)
     "boundary_modulus": _noop,
@@ -60,13 +65,16 @@ _HANDLERS: dict[str, PostHandler] = {
     "effective_shear_modulus": build_effective_shear_modulus_commands_,
     "specific_youngs_modulus": build_specific_youngs_modulus_commands_,
     "specific_shear_modulus": build_specific_shear_modulus_commands_,
+    "effective_youngs_modulus_ratio": build_effective_youngs_modulus_ratio_commands_,
+    "effective_shear_modulus_ratio": build_effective_shear_modulus_ratio_commands_,
     "boundary_touch_area": _noop,
     "boundary_touch_area_ratio": _noop,
     "contact_traction": _noop,
     "contact_stress": _noop,
-    "volume_avg_stress": _noop,
-    "volume_avg_energy": _noop,
+    "stress_vol_avg": _noop,
+    "energy_vol_avg": _noop,
     "mass": build_mass_commands_,
+    "volume_fraction": build_volume_fraction_commands_,
 
     # Modal outputs
     **{
