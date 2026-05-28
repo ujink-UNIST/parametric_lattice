@@ -73,7 +73,14 @@ def _write_row_to_range(
         names = [n for n, _ in block]
         c0 = block[0][1]
         c1 = block[-1][1]
-        row_range[0, c0 : c1 + 1].value = [[row_dict.get(n) for n in names]]
+        values = [row_dict.get(n) for n in names]
+
+        try:
+            # xlwings Range (existing rows from table.data_body_range)
+            row_range[0, c0 : c1 + 1].value = [values]
+        except TypeError:
+            # Raw Excel COM Range (new rows from ListRows.Add().Range)
+            row_range.Cells(1, c0 + 1).Resize(1, c1 - c0 + 1).Value = tuple([tuple(values)])
 
 
 def _add_table_row(table: Table):
