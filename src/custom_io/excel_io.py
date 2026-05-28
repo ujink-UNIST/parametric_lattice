@@ -338,17 +338,20 @@ def selected_input_indices(
     book: xw.Book,
     table_key: str = _INPUT_TABLE,
 ) -> tuple[int, ...] | None:
-    """Return 0-based indices within the input table body for current selection.
+    """Return 0-based visible row indices within the input table body.
 
-    This is intended for the Excel macro entrypoint (simulation.py) to run only
-    the currently selected rows.
+    Selection is accepted only when it intersects the actual `t_input` body on
+    the same worksheet, in both row and column directions. This prevents rows on
+    other sheets, whole-sheet row selections, or filtered/hidden rows from being
+    interpreted as selected simulation cases.
 
     Rules:
       - If the selection does not intersect the table body, returns None.
       - If the table has no body (empty), returns None.
+      - Hidden rows (including rows hidden by filters) are ignored.
     """
 
-    table: Table = find_table(book, table_key)
+    table, table_sheet = find_table_and_sheet(book, table_key)
     body = table.data_body_range
     if body is None:
         return None
@@ -357,8 +360,20 @@ def selected_input_indices(
     if sel is None:
         return None
 
-    body_first_row = body.row
-    body_last_row = body.row + body.rows.count - 1
+    body_first_row = int(body.row)
+    body_last_row = body_first_row + int(body.rows.count) - 1
+    body_first_col = int(body.column)
+    body_last_col = body_first_col + int(body.columns.count) - 1
+
+    def _same_sheet(area: Any) -> bool:
+        with suppress(Exception):
+            return str(area.sheet.name) == str(table_sheet.name)
+        return False
+
+    def _is_row_hidden(row_num: int) -> bool:
+        with suppress(Exception):
+            return bool(table_sheet.range(f"{row_num}:{row_num}").api.EntireRow.Hidden)
+        return False
 
     # xlwings Range may or may not expose .areas depending on backend/typing.
     sel_any: Any = sel
@@ -367,11 +382,25 @@ def selected_input_indices(
 
     idxs: set[int] = set()
     for area in areas:
-        r0 = area.row
-        r1 = area.row + area.rows.count - 1
+        if not _same_sheet(area):
+            continue
+
+        r0 = int(area.row)
+        r1 = r0 + int(area.rows.count) - 1
+        c0 = int(area.column)
+        c1 = c0 + int(area.columns.count) - 1
+
+        # Require row AND column intersection with the t_input body range.
         rr0 = max(r0, body_first_row)
         rr1 = min(r1, body_last_row)
+        cc0 = max(c0, body_first_col)
+        cc1 = min(c1, body_last_col)
+        if rr0 > rr1 or cc0 > cc1:
+            continue
+
         for r in range(rr0, rr1 + 1):
+            if _is_row_hidden(r):
+                continue
             idxs.add(r - body_first_row)
 
     return tuple(sorted(idxs)) if idxs else None
