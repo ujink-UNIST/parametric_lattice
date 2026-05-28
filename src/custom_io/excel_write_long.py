@@ -64,7 +64,25 @@ def _read_existing_required_rows(
     return existing
 
 
-def _write_row_at(
+def _write_row_at(sheet, abs_row: int, abs_c0: int, values: list[Any]) -> None:
+    """Write a contiguous row block with explicit range validation."""
+
+    if not values:
+        return
+
+    abs_row = int(abs_row)
+    abs_c0 = int(abs_c0)
+    abs_c1 = abs_c0 + len(values) - 1
+
+    if abs_row < 1 or abs_c0 < 1 or abs_c1 < abs_c0:
+        raise ValueError(
+            f"Invalid Excel range: row={abs_row}, c0={abs_c0}, c1={abs_c1}, len={len(values)}"
+        )
+
+    sheet.range((abs_row, abs_c0), (abs_row, abs_c1)).value = [values]
+
+
+def _write_table_row_at(
     *,
     table: Table,
     row_index0: int,
@@ -91,11 +109,9 @@ def _write_row_at(
     for block in _contiguous_blocks(columns, header_idx0):
         names = [n for n, _ in block]
         c0 = block[0][1]
-        c1 = block[-1][1]
         values = [row_dict.get(n) for n in names]
         abs_c0 = body_first_col + c0
-        abs_c1 = body_first_col + c1
-        sheet.range((abs_row, abs_c0), (abs_row, abs_c1)).value = [values]
+        _write_row_at(sheet, abs_row, abs_c0, values)
 
 
 def _add_table_row(table: Table, *, retries: int = 5) -> int:
@@ -183,7 +199,7 @@ def upsert_long_rows(
             row_index0 = _add_table_row(table)
             index_map[k] = row_index0
 
-        _write_row_at(
+        _write_table_row_at(
             table=table,
             row_index0=int(row_index0),
             row_dict=row_values,
