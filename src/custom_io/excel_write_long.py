@@ -65,7 +65,11 @@ def _read_existing_required_rows(
 
 
 def _write_row_at(sheet, abs_row: int, abs_c0: int, values: list[Any]) -> None:
-    """Write a contiguous row block with explicit range validation."""
+    """Write a contiguous row block with explicit range validation.
+
+    Reacquire the worksheet by name before each write attempt. Excel COM/xlwings
+    sheet/range objects can become stale after ListObject row additions.
+    """
 
     if not values:
         return
@@ -79,7 +83,28 @@ def _write_row_at(sheet, abs_row: int, abs_c0: int, values: list[Any]) -> None:
             f"Invalid Excel range: row={abs_row}, c0={abs_c0}, c1={abs_c1}, len={len(values)}"
         )
 
-    sheet.range((abs_row, abs_c0), (abs_row, abs_c1)).value = [values]
+    try:
+        book = sheet.book
+        sheet_name = str(sheet.name)
+    except Exception:
+        book = None
+        sheet_name = ""
+
+    last_error: Exception | None = None
+    for attempt in range(5):
+        try:
+            target_sheet = book.sheets[sheet_name] if book is not None and sheet_name else sheet
+            target_sheet.range((abs_row, abs_c0), (abs_row, abs_c1)).value = [values]
+            return
+        except Exception as e:  # noqa: BLE001 - preserve Excel COM context
+            last_error = e
+            time.sleep(0.1 * (attempt + 1))
+
+    raise RuntimeError(
+        "Failed to write t_out row block: "
+        f"sheet={sheet_name or '<unknown>'}, row={abs_row}, c0={abs_c0}, c1={abs_c1}, "
+        f"len={len(values)}"
+    ) from last_error
 
 
 def _write_table_row_at(
