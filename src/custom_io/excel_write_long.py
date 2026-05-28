@@ -8,8 +8,6 @@ from typing import Any
 from xlwings.main import Table
 
 
-
-
 def _require_columns(table: Table, required_columns: Iterable[str]) -> tuple[list[str], dict[str, int]]:
     required = [str(c) for c in required_columns]
 
@@ -26,49 +24,72 @@ def _require_columns(table: Table, required_columns: Iterable[str]) -> tuple[lis
     return required, header_idx0
 
 
-def _write_rows_to_table(
-    *,
-    table: Table,
-    row_dicts: list[Mapping[str, Any]],
-    columns: list[str],
-    header_idx0: dict[str, int],
-) -> None:
-    # Ensure row count. Prefer resizing the ListObject in one operation over
-    # repeated ListRows.Add/Delete calls; Excel COM can fail to add rows one by
-    # one when filters are active or when the table is near other content.
-    n_rows = len(row_dicts)
-    if n_rows == 0:
-        body = table.data_body_range
-        if body is not None:
-            table.api.Resize(table.header_row_range.api.Resize(1, table.range.columns.count))
-        return
-
-    table.api.Resize(table.header_row_range.api.Resize(n_rows + 1, table.range.columns.count))
-
-    body = table.data_body_range
-    if body is None:
-        return
-
-    col_indices0 = {c: header_idx0[c] for c in columns}
-    cols_sorted = sorted(col_indices0.items(), key=lambda t: t[1])  # (name, idx0)
-
-    # Partition into contiguous blocks
+def _contiguous_blocks(columns: list[str], header_idx0: dict[str, int]) -> list[list[tuple[str, int]]]:
+    pairs = sorted(((c, header_idx0[c]) for c in columns), key=lambda t: t[1])
     blocks: list[list[tuple[str, int]]] = []
-    for name, idx0 in cols_sorted:
+    for name, idx0 in pairs:
         if not blocks or idx0 != blocks[-1][-1][1] + 1:
             blocks.append([(name, idx0)])
         else:
             blocks[-1].append((name, idx0))
+    return blocks
 
-    for block in blocks:
+
+def _read_existing_required_rows(
+    *,
+    table: Table,
+    required: list[str],
+    header_idx0: dict[str, int],
+) -> list[dict[str, Any]]:
+    body = table.data_body_range
+    if body is None or body.rows.count <= 0:
+        return []
+
+    n_existing = body.rows.count
+    existing = [dict() for _ in range(n_existing)]
+
+    for block in _contiguous_blocks(required, header_idx0):
         names = [n for n, _ in block]
         c0 = block[0][1]
         c1 = block[-1][1]
-        rng = body[0:n_rows, c0 : c1 + 1]
-        data2d: list[list[Any]] = []
-        for r in row_dicts:
-            data2d.append([r.get(n) for n in names])
-        rng.value = data2d
+        data = body[0:n_existing, c0 : c1 + 1].options(ndim=2).value
+        if data is None:
+            continue
+        for r_i, row_vals in enumerate(data):
+            for n, v in zip(names, row_vals):
+                existing[r_i][n] = v
+
+    return existing
+
+
+def _write_row_to_range(
+    *,
+    row_range,
+    row_dict: Mapping[str, Any],
+    columns: list[str],
+    header_idx0: dict[str, int],
+) -> None:
+    for block in _contiguous_blocks(columns, header_idx0):
+        names = [n for n, _ in block]
+        c0 = block[0][1]
+        c1 = block[-1][1]
+        row_range[0, c0 : c1 + 1].value = [[row_dict.get(n) for n in names]]
+
+
+def _add_table_row(table: Table):
+    """Append one row to a ListObject and return the new row range.
+
+    Use AlwaysInsert=True so Excel shifts any below content down instead of
+    requiring a pre-empty row under the table. This avoids fragile ListObject
+    Resize calls.
+    """
+
+    try:
+        list_row = table.api.ListRows.Add(AlwaysInsert=True)
+    except TypeError:
+        # Some COM wrappers don't expose keyword arguments reliably.
+        list_row = table.api.ListRows.Add(None, True)
+    return list_row.Range
 
 
 def upsert_long_rows(
@@ -81,8 +102,9 @@ def upsert_long_rows(
     """Upsert rows into a long-format t_out table.
 
     For each incoming row, we search for an existing row with the same key
-    (index, hash, category, row, col). If found, we overwrite the values.
-    Otherwise, we append a new row.
+    (index, hash, category, row, col). If found, we overwrite that row in place.
+    Otherwise, we append exactly one new ListObject row with
+    ``ListRows.Add(AlwaysInsert=True)`` and write the row values.
 
     Strict mode:
       - `required_columns` must exist in the table header (no auto-create).
@@ -99,52 +121,35 @@ def upsert_long_rows(
         if k not in required:
             raise ValueError(f"key column {k!r} must be included in required_columns")
 
-    body = table.data_body_range
-    existing_dicts: list[dict[str, Any]] = []
-    if body is not None and body.rows.count > 0:
-        # Read only required columns.
-        cols_idx0 = [header_idx0[c] for c in required]
-        # Group into contiguous blocks for reading.
-        sorted_pairs = sorted(zip(required, cols_idx0), key=lambda t: t[1])
-        blocks: list[list[tuple[str, int]]] = []
-        for name, idx0 in sorted_pairs:
-            if not blocks or idx0 != blocks[-1][-1][1] + 1:
-                blocks.append([(name, idx0)])
-            else:
-                blocks[-1].append((name, idx0))
-
-        # Initialize with empty dicts
-        n_existing = body.rows.count
-        existing_dicts = [dict() for _ in range(n_existing)]
-        for block in blocks:
-            names = [n for n, _ in block]
-            c0 = block[0][1]
-            c1 = block[-1][1]
-            data = body[0:n_existing, c0 : c1 + 1].options(ndim=2).value
-            if data is None:
-                continue
-            for r_i, row_vals in enumerate(data):
-                for n, v in zip(names, row_vals):
-                    existing_dicts[r_i][n] = v
+    existing = _read_existing_required_rows(table=table, required=required, header_idx0=header_idx0)
 
     def key_of(d: Mapping[str, Any]) -> tuple[Any, ...]:
         return tuple(d.get(k) for k in key_columns)
 
     index_map: dict[tuple[Any, ...], int] = {}
-    for i, d in enumerate(existing_dicts):
+    for i, d in enumerate(existing):
         index_map[key_of(d)] = i
 
-    # Apply upserts
+    n_rows_current = len(existing)
+
     for d in incoming:
         k = key_of(d)
         hit = index_map.get(k)
-        if hit is None:
-            existing_dicts.append({c: d.get(c) for c in required})
-            index_map[k] = len(existing_dicts) - 1
-        else:
-            # Overwrite required columns
-            for c in required:
-                if c in d:
-                    existing_dicts[hit][c] = d.get(c)
+        row_values = {c: d.get(c) for c in required}
 
-    _write_rows_to_table(table=table, row_dicts=existing_dicts, columns=required, header_idx0=header_idx0)
+        if hit is not None:
+            body = table.data_body_range
+            if body is None:
+                # Should not happen if we had an existing hit, but be defensive.
+                row_range = _add_table_row(table)
+                index_map[k] = n_rows_current
+                n_rows_current += 1
+            else:
+                row_range = body[hit, :]
+            _write_row_to_range(row_range=row_range, row_dict=row_values, columns=required, header_idx0=header_idx0)
+            continue
+
+        row_range = _add_table_row(table)
+        _write_row_to_range(row_range=row_range, row_dict=row_values, columns=required, header_idx0=header_idx0)
+        index_map[k] = n_rows_current
+        n_rows_current += 1
