@@ -74,29 +74,31 @@ def _write_row_to_range(
         c0 = block[0][1]
         c1 = block[-1][1]
         values = [row_dict.get(n) for n in names]
-
-        try:
-            # xlwings Range (existing rows from table.data_body_range)
-            row_range[0, c0 : c1 + 1].value = [values]
-        except TypeError:
-            # Raw Excel COM Range (new rows from ListRows.Add().Range)
-            row_range.Cells(1, c0 + 1).Resize(1, c1 - c0 + 1).Value = tuple([tuple(values)])
+        # row_range is always an xlwings Range. New rows are re-read from
+        # table.data_body_range after ListRows.Add(), not written through raw
+        # COM ListRow.Range.
+        row_range[0, c0 : c1 + 1].value = [values]
 
 
 def _add_table_row(table: Table):
-    """Append one row to a ListObject and return the new row range.
+    """Append one row to a ListObject and return it as an xlwings Range.
 
     Use AlwaysInsert=True so Excel shifts any below content down instead of
-    requiring a pre-empty row under the table. This avoids fragile ListObject
-    Resize calls.
+    requiring a pre-empty row under the table. After adding, re-read the final
+    row from table.data_body_range so callers always get an xlwings Range, not a
+    raw COM ListRow.Range.
     """
 
     try:
-        list_row = table.api.ListRows.Add(AlwaysInsert=True)
+        table.api.ListRows.Add(AlwaysInsert=True)
     except TypeError:
         # Some COM wrappers don't expose keyword arguments reliably.
-        list_row = table.api.ListRows.Add(None, True)
-    return list_row.Range
+        table.api.ListRows.Add(None, True)
+
+    body = table.data_body_range
+    if body is None or body.rows.count <= 0:
+        raise RuntimeError("Failed to append a row to t_out")
+    return body[body.rows.count - 1, :]
 
 
 def upsert_long_rows(
