@@ -42,7 +42,7 @@ def _run_with_spinner(book: xw.Book, fn) -> None:
     if isinstance(fullname, str) and fullname.strip():
         spinner = start_cell_spinner(
             fullname,
-            targets=(("Input", "A1"), ("Output", "A1")),
+            targets=(("Input", "A1"),),
         )
 
     try:
