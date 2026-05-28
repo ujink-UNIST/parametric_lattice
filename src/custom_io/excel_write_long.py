@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -41,6 +42,7 @@ def _read_existing_required_rows(
     required: list[str],
     header_idx0: dict[str, int],
 ) -> list[dict[str, Any]]:
+    # Always get the current DataBodyRange immediately before reading.
     body = table.data_body_range
     if body is None or body.rows.count <= 0:
         return []
@@ -62,43 +64,76 @@ def _read_existing_required_rows(
     return existing
 
 
-def _write_row_to_range(
+def _write_row_at(
     *,
-    row_range,
+    table: Table,
+    row_index0: int,
     row_dict: Mapping[str, Any],
     columns: list[str],
     header_idx0: dict[str, int],
 ) -> None:
+    """Write one logical table row using freshly acquired absolute ranges.
+
+    Excel/xlwings Range objects can become stale immediately after ListObject
+    structural changes. Therefore this function reacquires `table.data_body_range`
+    and writes via absolute sheet coordinates each time instead of reusing a
+    previously sliced row Range.
+    """
+
+    body = table.data_body_range
+    if body is None or body.rows.count <= row_index0:
+        raise RuntimeError(f"t_out row {row_index0} is not available for writing")
+
+    sheet = body.sheet
+    abs_row = int(body.row) + int(row_index0)
+    body_first_col = int(body.column)
+
     for block in _contiguous_blocks(columns, header_idx0):
         names = [n for n, _ in block]
         c0 = block[0][1]
         c1 = block[-1][1]
         values = [row_dict.get(n) for n in names]
-        # row_range is always an xlwings Range. New rows are re-read from
-        # table.data_body_range after ListRows.Add(), not written through raw
-        # COM ListRow.Range.
-        row_range[0, c0 : c1 + 1].value = [values]
+        abs_c0 = body_first_col + c0
+        abs_c1 = body_first_col + c1
+        sheet.range((abs_row, abs_c0), (abs_row, abs_c1)).value = [values]
 
 
-def _add_table_row(table: Table):
-    """Append one row to a ListObject and return it as an xlwings Range.
+def _add_table_row(table: Table, *, retries: int = 5) -> int:
+    """Append one row and return its 0-based DataBodyRange row index.
 
     Use AlwaysInsert=True so Excel shifts any below content down instead of
-    requiring a pre-empty row under the table. After adding, re-read the final
-    row from table.data_body_range so callers always get an xlwings Range, not a
-    raw COM ListRow.Range.
+    requiring a pre-empty row under the table. After each structural change, the
+    caller must reacquire table ranges before writing.
     """
 
-    try:
-        table.api.ListRows.Add(AlwaysInsert=True)
-    except TypeError:
-        # Some COM wrappers don't expose keyword arguments reliably.
-        table.api.ListRows.Add(None, True)
+    last_error: Exception | None = None
+    for attempt in range(retries):
+        try:
+            table.api.ListRows.Add(AlwaysInsert=True)
+        except TypeError:
+            # Some COM wrappers don't expose keyword arguments reliably.
+            try:
+                table.api.ListRows.Add(None, True)
+            except Exception as e:  # noqa: BLE001 - preserve COM error context
+                last_error = e
+            else:
+                last_error = None
+        except Exception as e:  # noqa: BLE001 - preserve COM error context
+            last_error = e
+        else:
+            last_error = None
 
-    body = table.data_body_range
-    if body is None or body.rows.count <= 0:
-        raise RuntimeError("Failed to append a row to t_out")
-    return body[body.rows.count - 1, :]
+        if last_error is None:
+            # Reacquire DataBodyRange after the table structure changed.
+            body = table.data_body_range
+            if body is not None and body.rows.count > 0:
+                return int(body.rows.count) - 1
+            last_error = RuntimeError("ListRows.Add succeeded but DataBodyRange is empty")
+
+        time.sleep(0.1 * (attempt + 1))
+
+    assert last_error is not None
+    raise last_error
 
 
 def upsert_long_rows(
@@ -139,26 +174,19 @@ def upsert_long_rows(
     for i, d in enumerate(existing):
         index_map[key_of(d)] = i
 
-    n_rows_current = len(existing)
-
     for d in incoming:
         k = key_of(d)
-        hit = index_map.get(k)
         row_values = {c: d.get(c) for c in required}
 
-        if hit is not None:
-            body = table.data_body_range
-            if body is None:
-                # Should not happen if we had an existing hit, but be defensive.
-                row_range = _add_table_row(table)
-                index_map[k] = n_rows_current
-                n_rows_current += 1
-            else:
-                row_range = body[hit, :]
-            _write_row_to_range(row_range=row_range, row_dict=row_values, columns=required, header_idx0=header_idx0)
-            continue
+        row_index0 = index_map.get(k)
+        if row_index0 is None:
+            row_index0 = _add_table_row(table)
+            index_map[k] = row_index0
 
-        row_range = _add_table_row(table)
-        _write_row_to_range(row_range=row_range, row_dict=row_values, columns=required, header_idx0=header_idx0)
-        index_map[k] = n_rows_current
-        n_rows_current += 1
+        _write_row_at(
+            table=table,
+            row_index0=int(row_index0),
+            row_dict=row_values,
+            columns=required,
+            header_idx0=header_idx0,
+        )
