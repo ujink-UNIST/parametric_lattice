@@ -1376,21 +1376,6 @@ def _get_simulation_cases(
                         element_model=read_str(row_values, "element_type"),
                         radius=read_float(row_values, "radius_multiplier"),
                         kappa=read_optional_float(row_values, "kappa"),
-                        joint_area_factor=(
-                            read_optional_float(row_values, "joint_area_factor") or 1.0
-                        ),
-                        joint_length_factor=(
-                            read_optional_float(row_values, "joint_length_factor")
-                            or 1.0
-                        ),
-                        joint_bending_factor=(
-                            read_optional_float(row_values, "joint_bending_factor")
-                            or 1.0
-                        ),
-                        joint_torsion_factor=(
-                            read_optional_float(row_values, "joint_torsion_factor")
-                            or 1.0
-                        ),
                     ),
                     geometry=GeometryParams(
                         cell_name=resolve_cell_name(read_str(row_values, "cell_name")),

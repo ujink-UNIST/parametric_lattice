@@ -54,25 +54,13 @@ def build_sim_case(
     kappa: float = 0.85,
     element_type: str = "BEAM188",
     row_idx: int = 0,
-    # Joint strengthening factors (beam-only)
-    joint_area_factor: float = 1.0,
-    joint_length_factor: float = 1.0,
-    joint_bending_factor: float = 1.0,
-    joint_torsion_factor: float = 1.0,
 ) -> SimCase:
     return SimCase(
         row_idx=row_idx,
         pre_mesh_spec=PreMeshSpec(
             element_type=ElementTypeParams(model=element_type),
             profile=(
-                BeamProfileParams(
-                    radius=radius,
-                    kappa=kappa,
-                    joint_area_factor=joint_area_factor,
-                    joint_length_factor=joint_length_factor,
-                    joint_bending_factor=joint_bending_factor,
-                    joint_torsion_factor=joint_torsion_factor,
-                )
+                BeamProfileParams(radius=radius, kappa=kappa)
                 if "BEAM" in element_type.upper()
                 else SolidProfileParams(radius=radius)
             ),
