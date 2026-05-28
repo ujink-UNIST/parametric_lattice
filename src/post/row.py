@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Any
 
 T_OUT_COLUMNS: tuple[str, ...] = (
-    "index",
     "hash",
     "category",
     "row",
@@ -44,7 +43,6 @@ class TOutRow:
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "index": int(self.index),
             "hash": str(self.hash),
             "category": str(self.category),
             "row": int(self.row),

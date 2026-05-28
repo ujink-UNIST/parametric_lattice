@@ -106,12 +106,12 @@ def upsert_long_rows(
     table: Table,
     rows: Iterable[Mapping[str, Any]],
     required_columns: Iterable[str],
-    key_columns: tuple[str, ...] = ("index", "hash", "category", "row", "col"),
+    key_columns: tuple[str, ...] = ("hash", "category", "row", "col"),
 ) -> None:
     """Upsert rows into a long-format t_out table.
 
     For each incoming row, we search for an existing row with the same key
-    (index, hash, category, row, col). If found, we overwrite that row in place.
+    (hash, category, row, col). If found, we overwrite that row in place.
     Otherwise, we append exactly one new ListObject row with
     ``ListRows.Add(AlwaysInsert=True)`` and write the row values.
 

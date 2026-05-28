@@ -690,7 +690,7 @@ def run_postprocess(
 
     Extraction produces a flat list of :class:`post.row.TOutRow` and writes them
     into the output table with columns:
-      index, hash, category, metric, component, value, unit
+      hash, category, row, col, value, unit
 
     NOTE: `output_header` is accepted for backward compatibility with call sites
     but is not used.
@@ -786,7 +786,6 @@ def run_postprocess(
     )
     from post.context import PostprocessContext
     from post.row import T_OUT_COLUMNS
-    from post.sim_case_meta import META_COLUMNS
 
     output_table: Table = find_table(book, _OUTPUT_TABLE)
 
@@ -1130,7 +1129,6 @@ def run_postprocess(
                 from post.post_cache import parse_key
                 from post.unit_resolver import unit_for_category
 
-                case_index = int(ctx.sim_case.row_idx) + 1
                 sync_rows: list[dict[str, Any]] = []
                 for k, v in cache.rows.items():
                     try:
@@ -1138,7 +1136,6 @@ def run_postprocess(
                     except Exception:
                         continue
                     d = {
-                        "index": case_index,
                         "hash": case_hash,
                         "category": str(cat),
                         "row": int(r_i),
@@ -1146,14 +1143,13 @@ def run_postprocess(
                         "value": float(v),
                         "unit": unit_for_category(str(cat)),
                     }
-                    d.update(meta)
                     sync_rows.append(d)
 
                 if sync_rows:
                     upsert_long_rows(
                         table=output_table,
                         rows=sync_rows,
-                        required_columns=T_OUT_COLUMNS + META_COLUMNS,
+                        required_columns=T_OUT_COLUMNS,
                     )
                     hb.tick(force=True)
 
