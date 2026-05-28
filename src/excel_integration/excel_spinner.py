@@ -4,7 +4,7 @@ from __future__ import annotations
 
 Excel can appear "frozen" during long Python work (e.g. MAPDL), so this module
 runs a tiny *separate process* that periodically updates one or more cells
-(default: Sheet1!A1).
+(default: Input!A1).
 
 A separate process is used (instead of a thread) to avoid COM apartment/thread
 issues when talking to Excel.
@@ -58,8 +58,10 @@ def _spinner_proc(
 
     book = _find_open_book(app, fullname)
     if book is None:
-        # Fallback: open (may open a second instance of the workbook).
-        book = app.books.open(fullname)
+        # Do not open the workbook from the spinner process. Opening can create
+        # a second window / activate the wrong sheet (often Sheet1). If the
+        # already-open workbook cannot be found, silently disable the spinner.
+        return
 
     ranges = []
     for sheet_name, address in targets:
@@ -131,7 +133,7 @@ class CellSpinner:
 def start_cell_spinner(
     book_fullname: str,
     *,
-    sheet_name: str = "Sheet1",
+    sheet_name: str = "Input",
     address: str = "A1",
     targets: Sequence[SpinnerTarget] | None = None,
     period_s: float = _DEFAULT_PERIOD_S,

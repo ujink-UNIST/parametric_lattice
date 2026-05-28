@@ -119,8 +119,8 @@ def _set_status_pending(book: xw.Book, cell: xw.Range | None) -> None:
 def _set_status_running(book: xw.Book, cell: xw.Range | None) -> None:
     if cell is None:
         return
-    # Mirror the global spinner cell (Sheet1!A1) while this case runs.
-    cell.formula = "=Sheet1!$A$1"
+    # Mirror the global spinner cell (Input!A1) while this case runs.
+    cell.formula = "=Input!$A$1"
     _style_status_cell(cell, fill_rgb=_RUNNING_COLOR, font_rgb=_RUNNING_FONT)
     _doevents(book)
 
