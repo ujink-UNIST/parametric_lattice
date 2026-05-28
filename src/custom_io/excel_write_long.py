@@ -33,17 +33,20 @@ def _write_rows_to_table(
     columns: list[str],
     header_idx0: dict[str, int],
 ) -> None:
-    # Ensure row count.
-    api = table.api
-    list_rows = api.ListRows
+    # Ensure row count. Prefer resizing the ListObject in one operation over
+    # repeated ListRows.Add/Delete calls; Excel COM can fail to add rows one by
+    # one when filters are active or when the table is near other content.
     n_rows = len(row_dicts)
-    while list_rows.Count > n_rows:
-        list_rows(list_rows.Count).Delete()
-    while list_rows.Count < n_rows:
-        list_rows.Add()
+    if n_rows == 0:
+        body = table.data_body_range
+        if body is not None:
+            table.api.Resize(table.header_row_range.api.Resize(1, table.range.columns.count))
+        return
+
+    table.api.Resize(table.header_row_range.api.Resize(n_rows + 1, table.range.columns.count))
 
     body = table.data_body_range
-    if body is None or n_rows == 0:
+    if body is None:
         return
 
     col_indices0 = {c: header_idx0[c] for c in columns}

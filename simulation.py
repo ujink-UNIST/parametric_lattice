@@ -35,12 +35,15 @@ def _pause_to_close() -> None:
 
 
 def _run_with_spinner(book: xw.Book, fn) -> None:
-    """Animate a simple spinner in Sheet1!A1 while `fn()` runs."""
+    """Animate simple spinners in Input!A1 and Output!A1 while `fn()` runs."""
 
     spinner = None
     fullname = getattr(book, "fullname", None)
     if isinstance(fullname, str) and fullname.strip():
-        spinner = start_cell_spinner(fullname, sheet_name="Sheet1", address="A1")
+        spinner = start_cell_spinner(
+            fullname,
+            targets=(("Input", "A1"), ("Output", "A1")),
+        )
 
     try:
         fn()
