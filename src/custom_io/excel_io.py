@@ -710,10 +710,33 @@ def run_postprocess(
         "volume.solid.value": 1,
         "mass.solid.value": 1,
         "volume_fraction.cell.value": 1,
+        "element.count": 1,
         "stress.volume.sum": 1,
         "energy.strain.total": 1,
+        "energy.strain_density.reference": 1,
         "stress.volume.avg": 1,
-        "energy.strain_density.avg": 1,
+        "energy.strain_density.mean": 1,
+        "energy.strain_density.std": 1,
+        "energy.strain_density.median": 1,
+        "energy.strain_density.min": 1,
+        "energy.strain_density.max": 1,
+        "energy.strain_density.range": 1,
+        "energy.strain_density.p95": 1,
+        "energy.strain_density.p99": 1,
+        "energy.strain_density.cv": 1,
+        "energy.strain_density.skewness": 1,
+        "energy.strain_density.kurtosis": 1,
+        "energy.strain_density.normalized.mean": 1,
+        "energy.strain_density.normalized.std": 1,
+        "energy.strain_density.normalized.median": 1,
+        "energy.strain_density.normalized.min": 1,
+        "energy.strain_density.normalized.max": 1,
+        "energy.strain_density.normalized.range": 1,
+        "energy.strain_density.normalized.p95": 1,
+        "energy.strain_density.normalized.p99": 1,
+        "energy.strain_density.normalized.cv": 1,
+        "energy.strain_density.normalized.skewness": 1,
+        "energy.strain_density.normalized.kurtosis": 1,
         "force.boundary.value": 1,
         "moment.boundary.value": 1,
         "traction.boundary.value": 1,
@@ -774,10 +797,33 @@ def run_postprocess(
         extract_effective_youngs_modulus_ratio_rows,
     )
     from post.volume_metrics_command import (
-        extract_volume_avg_energy_rows,
+        extract_element_count_rows,
+        extract_reference_strain_density_rows,
+        extract_volume_mean_normalized_strain_density_rows,
+        extract_volume_mean_strain_density_rows,
+        extract_volume_median_normalized_strain_density_rows,
+        extract_volume_median_strain_density_rows,
         extract_volume_avg_stress_rows,
+        extract_volume_cv_normalized_strain_density_rows,
+        extract_volume_cv_strain_density_rows,
         extract_volume_energy_rows,
+        extract_volume_kurtosis_normalized_strain_density_rows,
+        extract_volume_max_normalized_strain_density_rows,
+        extract_volume_max_strain_density_rows,
+        extract_volume_min_normalized_strain_density_rows,
+        extract_volume_min_strain_density_rows,
+        extract_volume_p95_normalized_strain_density_rows,
+        extract_volume_p95_strain_density_rows,
+        extract_volume_p99_normalized_strain_density_rows,
+        extract_volume_p99_strain_density_rows,
+        extract_volume_range_normalized_strain_density_rows,
+        extract_volume_range_strain_density_rows,
+        extract_volume_skewness_normalized_strain_density_rows,
+        extract_volume_skewness_strain_density_rows,
         extract_volume_stress_rows,
+        extract_volume_std_normalized_strain_density_rows,
+        extract_volume_std_strain_density_rows,
+        extract_volume_kurtosis_strain_density_rows,
     )
     from post.modal_command import (
         extract_effective_modal_mass_rows,
@@ -1075,10 +1121,148 @@ def run_postprocess(
                     if "energy.strain.total" in allowed_requested:
                         _add_rows(rows)
 
-                if "energy.strain_density.avg" in allowed_needed and "energy.strain_density.avg" in compute_needed:
-                    rows = extract_volume_avg_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                if "element.count" in allowed_needed and "element.count" in compute_needed:
+                    rows = extract_element_count_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
                     _cache_rows(rows)
-                    if "energy.strain_density.avg" in allowed_requested:
+                    if "element.count" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.reference" in allowed_needed and "energy.strain_density.reference" in compute_needed:
+                    rows = extract_reference_strain_density_rows(ctx=ctx, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.reference" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.mean" in allowed_needed and "energy.strain_density.mean" in compute_needed:
+                    rows = extract_volume_mean_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.mean" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.std" in allowed_needed and "energy.strain_density.std" in compute_needed:
+                    rows = extract_volume_std_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.std" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.median" in allowed_needed and "energy.strain_density.median" in compute_needed:
+                    rows = extract_volume_median_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.median" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.min" in allowed_needed and "energy.strain_density.min" in compute_needed:
+                    rows = extract_volume_min_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.min" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.max" in allowed_needed and "energy.strain_density.max" in compute_needed:
+                    rows = extract_volume_max_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.max" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.range" in allowed_needed and "energy.strain_density.range" in compute_needed:
+                    rows = extract_volume_range_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.range" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.p95" in allowed_needed and "energy.strain_density.p95" in compute_needed:
+                    rows = extract_volume_p95_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.p95" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.p99" in allowed_needed and "energy.strain_density.p99" in compute_needed:
+                    rows = extract_volume_p99_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.p99" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.cv" in allowed_needed and "energy.strain_density.cv" in compute_needed:
+                    rows = extract_volume_cv_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.cv" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.skewness" in allowed_needed and "energy.strain_density.skewness" in compute_needed:
+                    rows = extract_volume_skewness_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.skewness" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.kurtosis" in allowed_needed and "energy.strain_density.kurtosis" in compute_needed:
+                    rows = extract_volume_kurtosis_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.kurtosis" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.mean" in allowed_needed and "energy.strain_density.normalized.mean" in compute_needed:
+                    rows = extract_volume_mean_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.mean" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.std" in allowed_needed and "energy.strain_density.normalized.std" in compute_needed:
+                    rows = extract_volume_std_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.std" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.median" in allowed_needed and "energy.strain_density.normalized.median" in compute_needed:
+                    rows = extract_volume_median_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.median" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.min" in allowed_needed and "energy.strain_density.normalized.min" in compute_needed:
+                    rows = extract_volume_min_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.min" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.max" in allowed_needed and "energy.strain_density.normalized.max" in compute_needed:
+                    rows = extract_volume_max_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.max" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.range" in allowed_needed and "energy.strain_density.normalized.range" in compute_needed:
+                    rows = extract_volume_range_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.range" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.p95" in allowed_needed and "energy.strain_density.normalized.p95" in compute_needed:
+                    rows = extract_volume_p95_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.p95" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.p99" in allowed_needed and "energy.strain_density.normalized.p99" in compute_needed:
+                    rows = extract_volume_p99_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.p99" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.cv" in allowed_needed and "energy.strain_density.normalized.cv" in compute_needed:
+                    rows = extract_volume_cv_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.cv" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.skewness" in allowed_needed and "energy.strain_density.normalized.skewness" in compute_needed:
+                    rows = extract_volume_skewness_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.skewness" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.kurtosis" in allowed_needed and "energy.strain_density.normalized.kurtosis" in compute_needed:
+                    rows = extract_volume_kurtosis_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.kurtosis" in allowed_requested:
                         _add_rows(rows)
 
                 # Modal outputs (mode 1..20)

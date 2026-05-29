@@ -31,6 +31,7 @@ POST_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
     "volume.solid.value": _SIM_TYPES_STATIC,
     "mass.solid.value": _SIM_TYPES_STATIC,
     "volume_fraction.cell.value": _SIM_TYPES_STATIC,
+    "element.count": _SIM_TYPES_STATIC,
 
     # Modal-only outputs
     **{f"res_freq_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
@@ -65,7 +66,29 @@ POST_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
     "stress.volume.sum": _SIM_TYPES_STATIC,
     "stress.volume.avg": _SIM_TYPES_STATIC,
     "energy.strain.total": _SIM_TYPES_STATIC,
-    "energy.strain_density.avg": _SIM_TYPES_STATIC,
+    "energy.strain_density.reference": _SIM_TYPES_STATIC,
+    "energy.strain_density.mean": _SIM_TYPES_STATIC,
+    "energy.strain_density.std": _SIM_TYPES_STATIC,
+    "energy.strain_density.median": _SIM_TYPES_STATIC,
+    "energy.strain_density.min": _SIM_TYPES_STATIC,
+    "energy.strain_density.max": _SIM_TYPES_STATIC,
+    "energy.strain_density.range": _SIM_TYPES_STATIC,
+    "energy.strain_density.p95": _SIM_TYPES_STATIC,
+    "energy.strain_density.p99": _SIM_TYPES_STATIC,
+    "energy.strain_density.cv": _SIM_TYPES_STATIC,
+    "energy.strain_density.skewness": _SIM_TYPES_STATIC,
+    "energy.strain_density.kurtosis": _SIM_TYPES_STATIC,
+    "energy.strain_density.normalized.mean": _SIM_TYPES_STATIC,
+    "energy.strain_density.normalized.std": _SIM_TYPES_STATIC,
+    "energy.strain_density.normalized.median": _SIM_TYPES_STATIC,
+    "energy.strain_density.normalized.min": _SIM_TYPES_STATIC,
+    "energy.strain_density.normalized.max": _SIM_TYPES_STATIC,
+    "energy.strain_density.normalized.range": _SIM_TYPES_STATIC,
+    "energy.strain_density.normalized.p95": _SIM_TYPES_STATIC,
+    "energy.strain_density.normalized.p99": _SIM_TYPES_STATIC,
+    "energy.strain_density.normalized.cv": _SIM_TYPES_STATIC,
+    "energy.strain_density.normalized.skewness": _SIM_TYPES_STATIC,
+    "energy.strain_density.normalized.kurtosis": _SIM_TYPES_STATIC,
 }
 
 

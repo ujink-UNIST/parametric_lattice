@@ -21,7 +21,7 @@ from typing import Any, Iterable
 SCHEMA_VERSION = 1
 # Increment this whenever category naming / post semantics change in a way that
 # should invalidate old cached numeric results.
-POST_LOGIC_VERSION = 3
+POST_LOGIC_VERSION = 11
 
 
 def make_key(category: str, row: int, col: int) -> str:
@@ -128,10 +128,11 @@ def _migrate_legacy_category_names(rows: dict[str, float]) -> dict[str, float]:
         "volume": "volume.solid.value",
         "volume_fraction": "volume_fraction.cell.value",
         "mass": "mass.solid.value",
+        "element_count": "element.count",
         "stress_vol_sum": "stress.volume.sum",
         "stress_vol_avg": "stress.volume.avg",
         "energy_sum": "energy.strain.total",
-        "energy_vol_avg": "energy.strain_density.avg",
+        "energy_vol_avg": "energy.strain_density.mean",
         "effective_youngs_modulus": "modulus.effective.youngs",
         "effective_shear_modulus": "modulus.effective.shear",
         "effective_bulk_modulus": "modulus.effective.bulk",
@@ -144,7 +145,7 @@ def _migrate_legacy_category_names(rows: dict[str, float]) -> dict[str, float]:
         "volume_stress": "stress.volume.sum",
         "volume_avg_stress": "stress.volume.avg",
         "volume_energy": "energy.strain.total",
-        "volume_avg_energy": "energy.strain_density.avg",
+        "volume_avg_energy": "energy.strain_density.mean",
 
         # Modal categories (row encodes mode index)
         "res_freq": "modal.res_freq",
@@ -163,6 +164,8 @@ def _migrate_legacy_category_names(rows: dict[str, float]) -> dict[str, float]:
             continue
 
         cat2 = rename.get(cat, cat)
+        if cat2 in {"energy.strain_density.avg", "energy.strain.avg", "energy.strain.mean"}:
+            cat2 = "energy.strain_density.mean"
         out[make_key(cat2, r, c)] = float(v)
 
     return out
@@ -236,7 +239,34 @@ def required_keys_static(prefix: str, *, sim_type: str, row: int) -> set[str]:
         cols = range(1, 7)
     elif prefix in {"area.boundary_contact.value", "area.boundary_contact.ratio"}:
         cols = range(1, 4)
-    elif prefix in {"energy.strain.total", "energy.strain_density.avg"}:
+    elif prefix in {"element.count"}:
+        cols = (1,)
+    elif prefix in {
+        "energy.strain.total",
+        "energy.strain_density.reference",
+        "energy.strain_density.mean",
+        "energy.strain_density.std",
+        "energy.strain_density.median",
+        "energy.strain_density.min",
+        "energy.strain_density.max",
+        "energy.strain_density.range",
+        "energy.strain_density.p95",
+        "energy.strain_density.p99",
+        "energy.strain_density.cv",
+        "energy.strain_density.skewness",
+        "energy.strain_density.kurtosis",
+        "energy.strain_density.normalized.mean",
+        "energy.strain_density.normalized.std",
+        "energy.strain_density.normalized.median",
+        "energy.strain_density.normalized.min",
+        "energy.strain_density.normalized.max",
+        "energy.strain_density.normalized.range",
+        "energy.strain_density.normalized.p95",
+        "energy.strain_density.normalized.p99",
+        "energy.strain_density.normalized.cv",
+        "energy.strain_density.normalized.skewness",
+        "energy.strain_density.normalized.kurtosis",
+    }:
         cols = (1,)
     elif prefix in {"modulus.effective.bulk"}:
         cols = (1,)

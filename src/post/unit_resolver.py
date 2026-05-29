@@ -38,6 +38,7 @@ def unit_for_category(category: str) -> str:
         "modulus.effective.youngs.ratio",
         "modulus.effective.shear.ratio",
         "volume_fraction.cell.value",
+        "element.count",
     }:
         return "-"
 
@@ -49,8 +50,35 @@ def unit_for_category(category: str) -> str:
         return "MPa*mm^3"
     if c in {"energy.strain.total"}:
         return "mJ"
-    if c in {"energy.strain_density.avg"}:
+    if c in {
+        "energy.strain_density.reference",
+        "energy.strain_density.mean",
+        "energy.strain_density.std",
+        "energy.strain_density.median",
+        "energy.strain_density.min",
+        "energy.strain_density.max",
+        "energy.strain_density.range",
+        "energy.strain_density.p95",
+        "energy.strain_density.p99",
+    }:
         return "mJ/mm^3"
+    if c in {
+        "energy.strain_density.cv",
+        "energy.strain_density.skewness",
+        "energy.strain_density.kurtosis",
+        "energy.strain_density.normalized.mean",
+        "energy.strain_density.normalized.std",
+        "energy.strain_density.normalized.median",
+        "energy.strain_density.normalized.min",
+        "energy.strain_density.normalized.max",
+        "energy.strain_density.normalized.range",
+        "energy.strain_density.normalized.p95",
+        "energy.strain_density.normalized.p99",
+        "energy.strain_density.normalized.cv",
+        "energy.strain_density.normalized.skewness",
+        "energy.strain_density.normalized.kurtosis",
+    }:
+        return "-"
     if c in {"mass.solid.value"}:
         return "kg"
     if c in {"modulus.effective.youngs.specific", "modulus.effective.shear.specific"}:
