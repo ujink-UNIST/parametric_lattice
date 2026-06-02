@@ -16,7 +16,7 @@ def solver_commands(
     nlgeom: bool = False,
     nsubst: int = 1,
     *,
-    modal_n_modes: int = 20,
+    modal_n_modes: int = 10,
 ) -> ApdlCommands:
     """Return the full solution-stage APDL pipeline for one simulation case."""
     sim_type = setup_params.sim_type

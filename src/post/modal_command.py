@@ -6,7 +6,7 @@ Mirrors legacy :mod:`postprocess.modal_command` behavior, but emits long-format
 `t_out` records.
 
 Row convention:
-  row = mode index (1..20)
+  row = mode index (1..10)
 
 Col convention:
   - resonant frequency: col=1

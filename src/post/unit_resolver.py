@@ -26,6 +26,7 @@ def unit_for_category(category: str) -> str:
         "modulus.effective.youngs",
         "modulus.effective.shear",
         "modulus.effective.bulk",
+        "stiffness.elastic.tensor",
         "traction.contact.value",
         "stress.contact.value",
         "stress.volume.avg",
@@ -79,6 +80,8 @@ def unit_for_category(category: str) -> str:
         "energy.strain_density.normalized.kurtosis",
     }:
         return "-"
+    if c in {"compliance.elastic.tensor"}:
+        return "1/MPa"
     if c in {"mass.solid.value"}:
         return "kg"
     if c in {"modulus.effective.youngs.specific", "modulus.effective.shear.specific"}:

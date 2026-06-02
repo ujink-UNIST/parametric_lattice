@@ -34,9 +34,9 @@ POST_OUTPUT_ALLOWED_SIM_TYPES: dict[str, frozenset[str]] = {
     "element.count": _SIM_TYPES_STATIC,
 
     # Modal-only outputs
-    **{f"res_freq_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
-    **{f"part_factor_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
-    **{f"eff_modal_mass_{i}": _SIM_TYPES_MODAL for i in range(1, 21)},
+    **{f"res_freq_{i}": _SIM_TYPES_MODAL for i in range(1, 11)},
+    **{f"part_factor_{i}": _SIM_TYPES_MODAL for i in range(1, 11)},
+    **{f"eff_modal_mass_{i}": _SIM_TYPES_MODAL for i in range(1, 11)},
 
     # Static-only outputs
     "traction.boundary.value": _SIM_TYPES_STATIC,

@@ -40,9 +40,9 @@ OUTPUT_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "stress.contact.value": ("traction.contact.value",),
 
     # Modal-only (kept as-is; categories are modal.* and handled elsewhere)
-    **{f"res_freq_{i}": () for i in range(1, 21)},
-    **{f"part_factor_{i}": () for i in range(1, 21)},
-    **{f"eff_modal_mass_{i}": () for i in range(1, 21)},
+    **{f"res_freq_{i}": () for i in range(1, 11)},
+    **{f"part_factor_{i}": () for i in range(1, 11)},
+    **{f"eff_modal_mass_{i}": () for i in range(1, 11)},
 
     "stress.volume.sum": (),
     "energy.strain.total": (),

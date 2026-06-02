@@ -108,15 +108,15 @@ _HANDLERS: dict[str, PostHandler] = {
     # Modal outputs
     **{
         f"res_freq_{i}": (lambda _ctx, i=i: build_resonant_frequency_command_(_ctx, mode_index=i))
-        for i in range(1, 21)
+        for i in range(1, 11)
     },
     **{
         f"part_factor_{i}": (lambda _ctx, i=i: build_modal_participation_commands_(_ctx, mode_index=i))
-        for i in range(1, 21)
+        for i in range(1, 11)
     },
     **{
         f"eff_modal_mass_{i}": (lambda _ctx, i=i: build_modal_effective_mass_commands_(_ctx, mode_index=i))
-        for i in range(1, 21)
+        for i in range(1, 11)
     },
 }
 

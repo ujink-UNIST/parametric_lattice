@@ -21,7 +21,7 @@ from typing import Any, Iterable
 SCHEMA_VERSION = 1
 # Increment this whenever category naming / post semantics change in a way that
 # should invalidate old cached numeric results.
-POST_LOGIC_VERSION = 11
+POST_LOGIC_VERSION = 13
 
 
 def make_key(category: str, row: int, col: int) -> str:

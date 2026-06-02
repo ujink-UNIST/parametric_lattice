@@ -326,7 +326,7 @@ def run_selected_postprocess(
         if i in selected_set:
             selected.append(sim_case)
 
-    run_postprocess(book, tuple(selected), output_header)
+    run_postprocess(book, tuple(selected), output_header, source_inputs=inputs)
 
 
 def run_all(book: xw.Book) -> None:
@@ -478,6 +478,12 @@ def run_cases(
             status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
             _set_status_running(book, status_cell)
             hb.tick()
+
+            if _is_aggregate_sim_type(sim_case.post_mesh_spec.setup.sim_type):
+                # Aggregate rows (static=100, total=101) are postprocess-only.
+                # They combine already-computed cases and never run MAPDL solve.
+                _set_status_skip(book, status_cell)
+                continue
 
             case_key = sim_case.to_string()
             case_hash = build_case_hash(case_key)
@@ -681,6 +687,8 @@ def run_postprocess(
     book: xw.Book,
     inputs: tuple[SimCase, ...],
     output_header: Header,
+    *,
+    source_inputs: tuple[SimCase, ...] | None = None,
 ) -> None:
     hb = UIHeartbeat(book)
 
@@ -755,9 +763,9 @@ def run_postprocess(
         "traction.contact.value": 1,
         "stress.contact.value": 1,
         # Modal (default)
-        **{f"res_freq_{i}": 1 for i in range(1, 21)},
-        **{f"part_factor_{i}": 1 for i in range(1, 21)},
-        **{f"eff_modal_mass_{i}": 1 for i in range(1, 21)},
+        **{f"res_freq_{i}": 1 for i in range(1, 11)},
+        **{f"part_factor_{i}": 1 for i in range(1, 11)},
+        **{f"eff_modal_mass_{i}": 1 for i in range(1, 11)},
     }
 
     # Compute-time needed = requested + all prerequisites.
@@ -835,6 +843,154 @@ def run_postprocess(
 
     output_table: Table = find_table(book, _OUTPUT_TABLE)
 
+    # Aggregate rows:
+    #   sim_type=100 (or "static") combines xx, yy, zz, xy, yz, xz.
+    #   sim_type=101 (or "total") combines static + modal + modal_ff.
+    # Aggregates do not run MAPDL; they copy rows from required per-case caches
+    # under the aggregate row's own hash. Missing source cases/caches are errors.
+    source_by_group_and_type: dict[tuple[str, str], SimCase] = {}
+    for src_case in (source_inputs if source_inputs is not None else inputs):
+        src_type = _canonical_sim_type(src_case.post_mesh_spec.setup.sim_type)
+        if _is_aggregate_sim_type(src_type):
+            continue
+        source_by_group_and_type[(src_case.to_string_without_sim_type(), src_type)] = src_case
+
+    def _write_aggregate_rows(aggregate_case: SimCase) -> None:
+        aggregate_type = _canonical_sim_type(aggregate_case.post_mesh_spec.setup.sim_type)
+        if aggregate_type == "100":
+            required_types = ("xx", "yy", "zz", "xy", "yz", "xz")
+        elif aggregate_type == "101":
+            required_types = ("xx", "yy", "zz", "xy", "yz", "xz", "modal", "modal_ff")
+        else:
+            raise ValueError(f"Not an aggregate sim_type: {aggregate_case.post_mesh_spec.setup.sim_type!r}")
+
+        group_key = aggregate_case.to_string_without_sim_type()
+        aggregate_hash = build_case_hash(aggregate_case.to_string())
+
+        from post.post_cache import (
+            PostCache,
+            cache_path_for_case,
+            load_post_cache,
+            make_key,
+            parse_key,
+            save_post_cache,
+        )
+        from post.sim_case_meta import sim_case_meta
+        from post.unit_resolver import unit_for_category
+
+        out_rows: list[dict[str, Any]] = []
+        aggregate_cache = PostCache(
+            case_hash=aggregate_hash,
+            sim_case_meta=sim_case_meta(aggregate_case),
+            rows={},
+        )
+        missing: list[str] = []
+        static_tensor_values: dict[tuple[int, int], float] = {}
+
+        for required_type in required_types:
+            src_case = source_by_group_and_type.get((group_key, required_type))
+            if src_case is None:
+                missing.append(required_type)
+                continue
+
+            src_hash = build_case_hash(src_case.to_string())
+            cache_path = cache_path_for_case(
+                artifacts_case_dir=case_artifacts_root,
+                case_hash=src_hash,
+            )
+            cache = load_post_cache(cache_path, case_hash=src_hash)
+            if not cache.rows:
+                missing.append(f"{required_type}:post_cache")
+                continue
+
+            for k, v in cache.rows.items():
+                try:
+                    cat, r_i, c_i = parse_key(k)
+                except Exception:
+                    continue
+
+                aggregate_cache.rows[make_key(str(cat), int(r_i), int(c_i))] = float(v)
+
+                if str(cat) == "modulus.boundary.value":
+                    static_tensor_values[(int(r_i), int(c_i))] = float(v)
+
+                out_rows.append(
+                    {
+                        "hash": aggregate_hash,
+                        "category": str(cat),
+                        "row": int(r_i),
+                        "col": int(c_i),
+                        "value": float(v),
+                        "unit": unit_for_category(str(cat)),
+                    }
+                )
+
+        # Equivalent elastic stiffness/compliance tensors for static/total aggregates.
+        # Stiffness is assembled from the six static load-case boundary modulus rows:
+        #   stiffness.elastic.tensor[row,col] = stress_component / applied_strain (MPa)
+        #   row/col order = 1..6 in [xx, yy, zz, yz, xz, xy]
+        # Stiffness is cache-only; compliance is cache + Excel t_out.
+        stiffness = np.empty((6, 6), dtype=float)
+        for r_i in range(1, 7):
+            for c_i in range(1, 7):
+                v = static_tensor_values.get((r_i, c_i))
+                if v is None:
+                    missing.append(f"stiffness.elastic.tensor[{r_i},{c_i}]")
+                    stiffness[r_i - 1, c_i - 1] = np.nan
+                    continue
+                stiffness[r_i - 1, c_i - 1] = float(v)
+                aggregate_cache.rows[make_key("stiffness.elastic.tensor", r_i, c_i)] = float(v)
+
+        if not missing:
+            try:
+                compliance = np.linalg.inv(stiffness)
+            except np.linalg.LinAlgError as e:
+                label = "static=100" if aggregate_type == "100" else "total=101"
+                raise RuntimeError(
+                    f"Cannot build compliance.elastic.tensor for {label} aggregate "
+                    f"hash={aggregate_hash}: stiffness tensor is singular"
+                ) from e
+
+            if not np.all(np.isfinite(compliance)):
+                label = "static=100" if aggregate_type == "100" else "total=101"
+                raise RuntimeError(
+                    f"Cannot build compliance.elastic.tensor for {label} aggregate "
+                    f"hash={aggregate_hash}: non-finite inverse values"
+                )
+
+            for r_i in range(1, 7):
+                for c_i in range(1, 7):
+                    v = float(compliance[r_i - 1, c_i - 1])
+                    aggregate_cache.rows[make_key("compliance.elastic.tensor", r_i, c_i)] = v
+                    out_rows.append(
+                        {
+                            "hash": aggregate_hash,
+                            "category": "compliance.elastic.tensor",
+                            "row": r_i,
+                            "col": c_i,
+                            "value": v,
+                            "unit": unit_for_category("compliance.elastic.tensor"),
+                        }
+                    )
+
+        if missing:
+            label = "static=100" if aggregate_type == "100" else "total=101"
+            raise RuntimeError(
+                f"Cannot build {label} aggregate for hash={aggregate_hash}: "
+                f"missing required case/cache(s): {', '.join(missing)}"
+            )
+
+        save_post_cache(
+            cache_path_for_case(artifacts_case_dir=case_artifacts_root, case_hash=aggregate_hash),
+            aggregate_cache,
+        )
+
+        upsert_long_rows(
+            table=output_table,
+            rows=out_rows,
+            required_columns=T_OUT_COLUMNS,
+        )
+
     # We upsert to t_out incrementally per case for better UI responsiveness.
 
     # Keep a single MAPDL session open and switch working directory per case.
@@ -859,6 +1015,17 @@ def run_postprocess(
                 status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
                 _set_status_running(book, status_cell)
                 hb.tick()
+
+                if _is_aggregate_sim_type(sim_case.post_mesh_spec.setup.sim_type):
+                    try:
+                        _write_aggregate_rows(sim_case)
+                    except Exception:
+                        _set_status_fail(book, status_cell)
+                        hb.tick(force=True)
+                        raise
+                    _set_status_done(book, status_cell)
+                    hb.tick(force=True)
+                    continue
 
                 sim_type = str(sim_case.post_mesh_spec.setup.sim_type)
                 allowed_needed: dict[str, int] = {
@@ -1265,8 +1432,8 @@ def run_postprocess(
                     if "energy.strain_density.normalized.kurtosis" in allowed_requested:
                         _add_rows(rows)
 
-                # Modal outputs (mode 1..20)
-                for i in range(1, 21):
+                # Modal outputs (mode 1..10)
+                for i in range(1, 11):
                     key = f"res_freq_{i}"
                     if key in allowed_needed and key in compute_needed:
                         rows = extract_resonant_frequency_rows(
@@ -1346,6 +1513,32 @@ def run_postprocess(
 
 def build_case_hash(key: str) -> str:
     return sha1_hex(key)
+
+
+def _canonical_sim_type(sim_type: object) -> str:
+    """Return canonical sim_type string used for grouping/aggregation."""
+
+    s = str(sim_type).strip().lower()
+    if s in {"100", "100.0", "static"}:
+        return "100"
+    if s in {"101", "101.0", "total"}:
+        return "101"
+    if s == "zx":
+        # User-facing alias; internally shear XZ is represented as xz.
+        return "xz"
+    return s
+
+
+def _is_static_aggregate_sim_type(sim_type: object) -> bool:
+    return _canonical_sim_type(sim_type) == "100"
+
+
+def _is_total_aggregate_sim_type(sim_type: object) -> bool:
+    return _canonical_sim_type(sim_type) == "101"
+
+
+def _is_aggregate_sim_type(sim_type: object) -> bool:
+    return _canonical_sim_type(sim_type) in {"100", "101"}
 
 
 def _ensure_table_column(
