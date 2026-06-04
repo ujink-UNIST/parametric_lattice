@@ -18,21 +18,8 @@ class BeamProfileParams:
     radius: float
     kappa: float
 
-    # Joint strengthening factors (used when modeling joint segments separately).
-    # Defaults keep current behavior.
-    joint_area_factor: float = 1.0
-    joint_length_factor: float = 1.0
-    joint_bending_factor: float = 1.0
-    joint_torsion_factor: float = 1.0
-
     def to_string(self) -> str:
-        return (
-            f"Radius:{self.radius:.16e}__Kappa:{self.kappa:.16e}"
-            f"__JArea:{self.joint_area_factor:.16e}"
-            f"__JLength:{self.joint_length_factor:.16e}"
-            f"__JBend:{self.joint_bending_factor:.16e}"
-            f"__JTors:{self.joint_torsion_factor:.16e}"
-        )
+        return f"Radius:{self.radius:.16e}__Kappa:{self.kappa:.16e}"
 
 
 ProfileParams = BeamProfileParams | SolidProfileParams
@@ -43,10 +30,6 @@ def build_profile_params(
     element_model: str,
     radius: float,
     kappa: float | None = None,
-    joint_area_factor: float = 1.0,
-    joint_length_factor: float = 1.0,
-    joint_bending_factor: float = 1.0,
-    joint_torsion_factor: float = 1.0,
 ) -> ProfileParams:
     """Create the right ProfileParams variant based on element type.
 
@@ -68,13 +51,6 @@ def build_profile_params(
     if m.startswith("BEAM"):
         if kappa is None:
             raise ValueError("kappa must be provided for BEAM profiles")
-        return BeamProfileParams(
-            radius=float(radius),
-            kappa=float(kappa),
-            joint_area_factor=float(joint_area_factor),
-            joint_length_factor=float(joint_length_factor),
-            joint_bending_factor=float(joint_bending_factor),
-            joint_torsion_factor=float(joint_torsion_factor),
-        )
+        return BeamProfileParams(radius=float(radius), kappa=float(kappa))
 
     raise ValueError(f"Unsupported element model: {element_model!r}")

@@ -98,7 +98,7 @@ def extract_boundary_stress_rows(
             TOutRow(
                 index=case_index,
                 hash=case_hash,
-                category="boundary_stress",
+                category="stress.boundary.value",
                 row=int(out_row),
                 col=int(col),
                 value=v,

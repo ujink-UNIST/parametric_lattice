@@ -15,6 +15,7 @@ from post.effective_moduli_command import (
     build_effective_shear_modulus_commands_,
     build_effective_youngs_modulus_commands_,
 )
+from post.effective_bulk_modulus_command import build_effective_bulk_modulus_commands_
 from post.mass_command import build_mass_commands_
 from post.specific_moduli_command import (
     build_specific_shear_modulus_commands_,
@@ -44,50 +45,78 @@ def _noop(_: PostprocessContext) -> ApdlCommands:
     return ()
 
 
+
+
 _HANDLERS: dict[str, PostHandler] = {
     # Identifiers / externally-provided
-    "index": _noop,
-    "hash": _noop,
+    "id.index": _noop,
+    "id.hash": _noop,
 
     # MAPDL-computed outputs (implemented in post/)
-    "boundary_force": build_boundary_force_commands_,
-    "boundary_moment": build_boundary_moment_commands_,
-    "boundary_traction": build_boundary_traction_commands_,
-    "boundary_stress": build_boundary_stress_commands_,
-    "volume": build_volume_commands_,
-    "stress_vol_sum": build_volume_stress_commands_,
-    "energy_sum": build_volume_energy_commands_,
+    "force.boundary.value": build_boundary_force_commands_,
+    "moment.boundary.value": build_boundary_moment_commands_,
+    "traction.boundary.value": build_boundary_traction_commands_,
+    "stress.boundary.value": build_boundary_stress_commands_,
+    "volume.solid.value": build_volume_commands_,
+    "stress.volume.sum": build_volume_stress_commands_,
+    "energy.strain.total": build_volume_energy_commands_,
 
     # Python-derived outputs (no MAPDL commands)
-    "boundary_modulus": _noop,
-    "boundary_modulus_ratio": _noop,
-    "effective_youngs_modulus": build_effective_youngs_modulus_commands_,
-    "effective_shear_modulus": build_effective_shear_modulus_commands_,
-    "specific_youngs_modulus": build_specific_youngs_modulus_commands_,
-    "specific_shear_modulus": build_specific_shear_modulus_commands_,
-    "effective_youngs_modulus_ratio": build_effective_youngs_modulus_ratio_commands_,
-    "effective_shear_modulus_ratio": build_effective_shear_modulus_ratio_commands_,
-    "boundary_touch_area": _noop,
-    "boundary_touch_area_ratio": _noop,
-    "contact_traction": _noop,
-    "contact_stress": _noop,
-    "stress_vol_avg": _noop,
-    "energy_vol_avg": _noop,
-    "mass": build_mass_commands_,
-    "volume_fraction": build_volume_fraction_commands_,
+    "modulus.boundary.value": _noop,
+    "modulus.boundary.ratio": _noop,
+    "modulus.effective.youngs": build_effective_youngs_modulus_commands_,
+    "modulus.effective.shear": build_effective_shear_modulus_commands_,
+    "modulus.effective.bulk": build_effective_bulk_modulus_commands_,
+    "modulus.effective.youngs.specific": build_specific_youngs_modulus_commands_,
+    "modulus.effective.shear.specific": build_specific_shear_modulus_commands_,
+    "modulus.effective.youngs.ratio": build_effective_youngs_modulus_ratio_commands_,
+    "modulus.effective.shear.ratio": build_effective_shear_modulus_ratio_commands_,
+    "area.boundary_contact.value": _noop,
+    "area.boundary_contact.ratio": _noop,
+    "traction.contact.value": _noop,
+    "stress.contact.value": _noop,
+    "stress.volume.avg": _noop,
+    "energy.strain_density": _noop,
+    "energy.strain_density.reference": _noop,
+    "energy.strain_density.normalized": _noop,
+    "energy.strain_density.mean": _noop,
+    "energy.strain_density.std": _noop,
+    "energy.strain_density.median": _noop,
+    "energy.strain_density.min": _noop,
+    "energy.strain_density.max": _noop,
+    "energy.strain_density.range": _noop,
+    "energy.strain_density.p95": _noop,
+    "energy.strain_density.p99": _noop,
+    "energy.strain_density.cv": _noop,
+    "energy.strain_density.skewness": _noop,
+    "energy.strain_density.kurtosis": _noop,
+    "energy.strain_density.normalized.mean": _noop,
+    "energy.strain_density.normalized.std": _noop,
+    "energy.strain_density.normalized.median": _noop,
+    "energy.strain_density.normalized.min": _noop,
+    "energy.strain_density.normalized.max": _noop,
+    "energy.strain_density.normalized.range": _noop,
+    "energy.strain_density.normalized.p95": _noop,
+    "energy.strain_density.normalized.p99": _noop,
+    "energy.strain_density.normalized.cv": _noop,
+    "energy.strain_density.normalized.skewness": _noop,
+    "energy.strain_density.normalized.kurtosis": _noop,
+    "mass.solid.value": build_mass_commands_,
+    "volume_fraction.cell.value": build_volume_fraction_commands_,
+    "element.count": _noop,
 
     # Modal outputs
     **{
         f"res_freq_{i}": (lambda _ctx, i=i: build_resonant_frequency_command_(_ctx, mode_index=i))
-        for i in range(1, 21)
+        for i in range(1, 11)
     },
     **{
         f"part_factor_{i}": (lambda _ctx, i=i: build_modal_participation_commands_(_ctx, mode_index=i))
-        for i in range(1, 21)
+        for i in range(1, 11)
     },
     **{
         f"eff_modal_mass_{i}": (lambda _ctx, i=i: build_modal_effective_mass_commands_(_ctx, mode_index=i))
-        for i in range(1, 21)
+        for i in range(1, 11)
     },
 }
 

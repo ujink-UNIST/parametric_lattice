@@ -60,7 +60,7 @@ def extract_specific_youngs_modulus_rows(
             TOutRow(
                 index=int(r.index),
                 hash=str(r.hash),
-                category="specific_youngs_modulus",
+                category="modulus.effective.youngs.specific",
                 row=int(r.row),
                 col=int(r.col),
                 value=float(v),
@@ -91,7 +91,7 @@ def extract_specific_shear_modulus_rows(
             TOutRow(
                 index=int(r.index),
                 hash=str(r.hash),
-                category="specific_shear_modulus",
+                category="modulus.effective.shear.specific",
                 row=int(r.row),
                 col=int(r.col),
                 value=float(v),

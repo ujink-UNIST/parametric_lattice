@@ -3,8 +3,8 @@ from __future__ import annotations
 """Excel cell spinner for long-running RunPython calls.
 
 Excel can appear "frozen" during long Python work (e.g. MAPDL), so this module
-runs a tiny *separate process* that periodically updates a cell (default:
-Sheet1!A1).
+runs a tiny *separate process* that periodically updates one or more cells
+(default: Input!A1).
 
 A separate process is used (instead of a thread) to avoid COM apartment/thread
 issues when talking to Excel.
@@ -12,6 +12,7 @@ issues when talking to Excel.
 
 import time
 from collections.abc import Sequence
+from typing import TypeAlias
 from contextlib import suppress
 from dataclasses import dataclass
 from multiprocessing import Event, Process
@@ -23,6 +24,8 @@ _FRAMES: tuple[str, ...] = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 # 100 bpm = 100 updates/minute => 0.6 s per frame.
 _DEFAULT_BPM: float = 100.0
 _DEFAULT_PERIOD_S: float = 60.0 / _DEFAULT_BPM
+
+SpinnerTarget: TypeAlias = tuple[str, str]
 
 
 def _find_open_book(app, fullname: str):
@@ -39,8 +42,7 @@ def _find_open_book(app, fullname: str):
 def _spinner_proc(
     stop: Event,
     fullname: str,
-    sheet_name: str,
-    address: str,
+    targets: Sequence[SpinnerTarget],
     frames: Sequence[str],
     period_s: float,
 ) -> None:
@@ -56,23 +58,33 @@ def _spinner_proc(
 
     book = _find_open_book(app, fullname)
     if book is None:
-        # Fallback: open (may open a second instance of the workbook).
-        book = app.books.open(fullname)
+        # Do not open the workbook from the spinner process. Opening can create
+        # a second window / activate the wrong sheet (often Sheet1). If the
+        # already-open workbook cannot be found, silently disable the spinner.
+        return
 
-    sht = None
-    with suppress(Exception):
-        sht = book.sheets[sheet_name]
-    if sht is None:
-        sht = book.sheets[0]
+    ranges = []
+    for sheet_name, address in targets:
+        sht = None
+        with suppress(Exception):
+            sht = book.sheets[sheet_name]
+        if sht is None:
+            continue
+        with suppress(Exception):
+            rng = sht.range(address)
+            rng.api.Font.Bold = False
+            ranges.append(rng)
 
-    rng = sht.range(address)
-    with suppress(Exception):
-        rng.api.Font.Bold = False
+    if not ranges:
+        return
 
     i = 0
     n = len(frames)
     while not stop.is_set():
-        rng.value = frames[i % n]
+        v = frames[i % n]
+        for rng in ranges:
+            with suppress(Exception):
+                rng.value = v
         i += 1
         with suppress(Exception):
             app.api.Run("DoEvents")
@@ -84,8 +96,7 @@ class CellSpinner:
     process: Process
     stop_event: Event
     fullname: str
-    sheet_name: str
-    address: str
+    targets: tuple[SpinnerTarget, ...]
 
     def stop(
         self,
@@ -111,14 +122,10 @@ class CellSpinner:
             if book is None:
                 return
 
-            sht = None
-            with suppress(Exception):
-                sht = book.sheets[self.sheet_name]
-            if sht is None:
-                sht = book.sheets[0]
-
             v = "" if clear else final
-            sht.range(self.address).value = v
+            for sheet_name, address in self.targets:
+                with suppress(Exception):
+                    book.sheets[sheet_name].range(address).value = v
             with suppress(Exception):
                 app.api.Run("DoEvents")
 
@@ -126,16 +133,18 @@ class CellSpinner:
 def start_cell_spinner(
     book_fullname: str,
     *,
-    sheet_name: str = "Sheet1",
+    sheet_name: str = "Input",
     address: str = "A1",
+    targets: Sequence[SpinnerTarget] | None = None,
     period_s: float = _DEFAULT_PERIOD_S,
     frames: Sequence[str] = _FRAMES,
 ) -> CellSpinner:
+    resolved_targets = tuple(targets) if targets is not None else ((sheet_name, address),)
     stop = Event()
     p = Process(
         target=_spinner_proc,
-        args=(stop, book_fullname, sheet_name, address, tuple(frames), float(period_s)),
+        args=(stop, book_fullname, resolved_targets, tuple(frames), float(period_s)),
         daemon=True,
     )
     p.start()
-    return CellSpinner(p, stop, book_fullname, sheet_name, address)
+    return CellSpinner(p, stop, book_fullname, resolved_targets)

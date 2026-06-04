@@ -39,11 +39,10 @@ class PostMeshSpec:
     setup: SetupParams
 
     def to_string(self) -> str:
-        return (
-            self.material.to_string()
-            + "__"
-            + self.setup.to_string()
-        )
+        return self.material.to_string() + "__" + self.setup.to_string()
+
+    def to_string_without_sim_type(self) -> str:
+        return self.material.to_string() + "__" + self.setup.to_string_without_sim_type()
 
 
 @dataclass(frozen=True)
@@ -53,8 +52,9 @@ class SimCase:
     post_mesh_spec: PostMeshSpec
 
     def to_string(self) -> str:
-        return (
-            self.pre_mesh_spec.to_string()
-            + "__"
-            + self.post_mesh_spec.to_string()
-        )
+        return self.pre_mesh_spec.to_string() + "__" + self.post_mesh_spec.to_string()
+
+    def to_string_without_sim_type(self) -> str:
+        """Case key excluding sim_type (for cross-loadcase grouping)."""
+
+        return self.pre_mesh_spec.to_string() + "__" + self.post_mesh_spec.to_string_without_sim_type()

@@ -31,7 +31,11 @@ def strain_variable_commands(
         "zx": 0.0,
     }
 
-    if sim_type in ("xy", "yx"):
+    if sim_type == "xyz":
+        values["xx"] = strain
+        values["yy"] = strain
+        values["zz"] = strain
+    elif sim_type in ("xy", "yx"):
         values["xy"] = strain
         values["yx"] = strain
     elif sim_type in ("yz", "zy"):

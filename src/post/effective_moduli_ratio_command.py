@@ -59,7 +59,7 @@ def extract_effective_youngs_modulus_ratio_rows(
             TOutRow(
                 index=int(r.index),
                 hash=str(r.hash),
-                category="effective_youngs_modulus_ratio",
+                category="modulus.effective.youngs.ratio",
                 row=int(r.row),
                 col=int(r.col),
                 value=float(v),
@@ -95,7 +95,7 @@ def extract_effective_shear_modulus_ratio_rows(
             TOutRow(
                 index=int(r.index),
                 hash=str(r.hash),
-                category="effective_shear_modulus_ratio",
+                category="modulus.effective.shear.ratio",
                 row=int(r.row),
                 col=int(r.col),
                 value=float(v),

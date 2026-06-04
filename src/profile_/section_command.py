@@ -19,15 +19,14 @@ def build_section_commands_(
     unit_cell: UnitCell,
     geometry_params: GeometryParams,
     profile_params: ProfileParams,
-) -> tuple[ApdlCommands, tuple[int, ...], tuple[int, ...]]:
+) -> tuple[ApdlCommands, tuple[int, ...]]:
     if isinstance(profile_params, SolidProfileParams):
-        return ((), (), ())
+        return ((), ())
 
     kappa = profile_params.kappa
     section_map: Dict[Tuple[float, float], int] = {}
     cmds: List[str] = []
     edge_sec_ids: List[int] = []
-    edge_joint_sec_ids: List[int] = []
 
     for edge, beam_type_id, ratio in zip(
         unit_cell.edges,
@@ -40,13 +39,10 @@ def build_section_commands_(
             unit_cell,
         )
         key = (round(radius_ratio, 12), float(ratio))
-        sec_id_pair = section_map.get(key)
-        if sec_id_pair is None:
-            # Allocate two section ids per unique (radius_ratio, ratio):
-            #   - normal section
-            #   - joint-strengthened section (same area, modified I/J)
-            sec_id_normal = len(section_map) * 2 + 1
-            sec_id_joint = len(section_map) * 2 + 2
+        sec_id = section_map.get(key)
+        if sec_id is None:
+            # Allocate one section id per unique (radius_ratio, ratio).
+            sec_id = len(section_map) + 1
 
             # Match solid modeling convention: use physical radius scaled by unit-cell size.
             # Solid uses:
@@ -55,48 +51,21 @@ def build_section_commands_(
                 radius_ratio * profile_params.radius * np.min(geometry_params.size)
             )
 
-            a_eff, iyy_eff, izz_eff, j_eff = _circular_section_properties(
-                radius,
-                ratio,
-                area_factor=1.0,
-                bending_factor=1.0,
-                torsion_factor=1.0,
-            )
-
-            # Joint section: optionally force "rigid" bending/torsion to mimic solid-like joints.
-            area_factor = float(getattr(profile_params, "joint_area_factor", 1.0))
-            bending_factor = float(getattr(profile_params, "joint_bending_factor", 1.0))
-            torsion_factor = float(getattr(profile_params, "joint_torsion_factor", 1.0))
-
-            a_j, iyy_j, izz_j, j_j = _circular_section_properties(
-                radius,
-                ratio,
-                area_factor=area_factor,
-                bending_factor=bending_factor,
-                torsion_factor=torsion_factor,
-            )
+            a_eff, iyy_eff, izz_eff, j_eff = _circular_section_properties(radius, ratio)
 
             label = f"D{radius_ratio:.4f}_Q{ratio:.2f}"
-            label_joint = f"{label}_JOINT"
 
             cmds.extend(apdl_block(f"""
-{apdl_comment(f"Define reusable beam section {sec_id_normal} (normal) for diameter={radius_ratio:.10g}, ratio={ratio:.10g}")}
-SECTYPE,{sec_id_normal},BEAM,ASEC,{label},0
+{apdl_comment(f"Define reusable beam section {sec_id} for diameter={radius_ratio:.10g}, ratio={ratio:.10g}")}
+SECTYPE,{sec_id},BEAM,ASEC,{label},0
 SECDATA,{a_eff:.10g},{iyy_eff:.10g},0,{izz_eff:.10g},0,{j_eff:.10g},0,0,0,0,{radius:.10g},{radius:.10g},{kappa:.10g},{kappa:.10g}
-
-{apdl_comment(f"Define reusable beam section {sec_id_joint} (joint) for diameter={radius_ratio:.10g}, ratio={ratio:.10g}")}
-SECTYPE,{sec_id_joint},BEAM,ASEC,{label_joint},0
-SECDATA,{a_j:.10g},{iyy_j:.10g},0,{izz_j:.10g},0,{j_j:.10g},0,0,0,0,{radius:.10g},{radius:.10g},{kappa:.10g},{kappa:.10g}
 """))
 
-            section_map[key] = (sec_id_normal, sec_id_joint)
-        else:
-            sec_id_normal, sec_id_joint = sec_id_pair
+            section_map[key] = sec_id
 
-        edge_sec_ids.append(sec_id_normal)
-        edge_joint_sec_ids.append(sec_id_joint)
+        edge_sec_ids.append(sec_id)
 
-    return (tuple(cmds), tuple(edge_sec_ids), tuple(edge_joint_sec_ids))
+    return (tuple(cmds), tuple(edge_sec_ids))
 
 
 def _get_edge_radius_ratio(
@@ -131,9 +100,7 @@ def _circular_section_properties(
 
     `ratio` is the existing per-edge scaling used in this project.
 
-    The *_factor knobs allow joint strengthening experiments where bending/torsion
-    stiffness is scaled without necessarily scaling axial area the same way.
-    Defaults keep current behavior.
+    `ratio` scales all section properties consistently for each edge type.
     """
 
     a = math.pi * radius**2

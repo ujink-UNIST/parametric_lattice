@@ -96,7 +96,7 @@ def extract_boundary_traction_rows(
                 TOutRow(
                     index=case_index,
                     hash=case_hash,
-                    category="boundary_traction",
+                    category="traction.boundary.value",
                     row=int(out_row),
                     col=int(_col_index(face_axis, traction_comp)),
                     value=v,

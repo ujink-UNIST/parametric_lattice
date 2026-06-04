@@ -48,7 +48,7 @@ def extract_boundary_modulus_ratio_rows(
             TOutRow(
                 index=int(r.index),
                 hash=str(r.hash),
-                category="boundary_modulus_ratio",
+                category="modulus.boundary.ratio",
                 row=int(r.row),
                 col=int(r.col),
                 value=float(v),

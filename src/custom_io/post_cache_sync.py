@@ -32,7 +32,7 @@ from custom_io.excel_write_long import upsert_long_rows
 from custom_io.ui_heartbeat import UIHeartbeat
 from post.post_cache import cache_path_for_case, load_post_cache_lenient, parse_key, save_post_cache
 from post.row import T_OUT_COLUMNS
-from post.sim_case_meta import META_COLUMNS, sim_case_meta
+from post.sim_case_meta import sim_case_meta
 from post.unit_resolver import unit_for_category
 from core.parameters.sim_case import SimCase
 
@@ -79,13 +79,11 @@ def sync_post_cache_to_t_out(book: xw.Book) -> None:
             meta = sim_case_meta(sim_case)
             cache.sim_case_meta = meta
 
-            case_index = int(sim_case.row_idx) + 1
             sync_rows: list[dict[str, Any]] = []
             for k, v in cache.rows.items():
                 with suppress(Exception):
                     cat, r_i, c_i = parse_key(k)
                     d = {
-                        "index": case_index,
                         "hash": case_hash,
                         "category": str(cat),
                         "row": int(r_i),
@@ -93,7 +91,6 @@ def sync_post_cache_to_t_out(book: xw.Book) -> None:
                         "value": float(v),
                         "unit": unit_for_category(str(cat)),
                     }
-                    d.update(meta)
                     sync_rows.append(d)
 
             # Upsert to Excel
@@ -101,7 +98,7 @@ def sync_post_cache_to_t_out(book: xw.Book) -> None:
                 upsert_long_rows(
                     table=output_table,
                     rows=sync_rows,
-                    required_columns=T_OUT_COLUMNS + META_COLUMNS,
+                    required_columns=T_OUT_COLUMNS,
                 )
                 hb.tick(force=True)
 

@@ -16,7 +16,6 @@ from core.parameters.profile_params import (
     ProfileParams,
 )
 from core.unit_cell import Edges, Nodes, UnitCell
-from geometry.mid_keypoint_command import edge_radius
 
 
 def _build_beam_line_sizing_commands(
@@ -25,18 +24,10 @@ def _build_beam_line_sizing_commands(
     profile_params: BeamProfileParams,
     meshing_params: MeshingParams,
 ) -> ApdlCommands:
-    """Return ``LESIZE`` commands for beam lines (mid + joint segments).
+    """Return ``LESIZE`` commands for beam lines.
 
     Line numbering convention (see geometry.line_command / profile_.line_section_command):
-      1..E       : mid segments
-      E+1..2E    : start joint segments
-      2E+1..3E   : end joint segments
-
-    We size *all* segments:
-      - joint segments get divisions based on r_eff
-      - mid segments get divisions based on (L - 2*r_eff)
-
-    where r_eff = min(r, 0.49*L) to match the mid-keypoint clamping logic.
+      1..E : one line per original lattice edge
     """
 
     cmds: List[str] = []
@@ -53,35 +44,12 @@ def _build_beam_line_sizing_commands(
             cmds.append(f"! LESIZE skipped: degenerate edge (edge_index={edge_index}, length=0)")
             continue
 
-        r = float(
-            edge_radius(
-                unit_cell,
-                geometry_params,
-                profile_params,
-                edge_index,
-                edge,
-            )
-            * profile_params.joint_length_factor
-        )
-        r_eff = min(r, 0.49 * length)
+        _ = profile_params
+        ndiv = _divisions_for_edge(length, meshing_params.max_element_size)
+        line_id = edge_index + 1
 
-        joint_len = float(r_eff)
-        mid_len = float(max(length - 2.0 * r_eff, 0.0))
-
-        ndiv_joint = _divisions_for_edge(joint_len, meshing_params.max_element_size)
-        ndiv_mid = _divisions_for_edge(mid_len, meshing_params.max_element_size)
-
-        line_mid = edge_index + 1
-        line_start = n_edges + (edge_index + 1)
-        line_end = 2 * n_edges + (edge_index + 1)
-
-        cmds.append(
-            f"! LESIZE edge {edge_index + 1}: L={length:.6g}, r_eff={r_eff:.6g}, "
-            f"mid_len={mid_len:.6g}, joint_len={joint_len:.6g}"
-        )
-        cmds.append(f"LESIZE,{line_mid},,,{ndiv_mid}")
-        cmds.append(f"LESIZE,{line_start},,,{ndiv_joint}")
-        cmds.append(f"LESIZE,{line_end},,,{ndiv_joint}")
+        cmds.append(f"! LESIZE edge {edge_index + 1}: L={length:.6g}")
+        cmds.append(f"LESIZE,{line_id},,,{ndiv}")
 
     return tuple(cmds)
 

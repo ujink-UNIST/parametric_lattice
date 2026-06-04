@@ -55,7 +55,7 @@ def extract_mass_rows(
         TOutRow(
             index=case_index,
             hash=case_hash,
-            category="mass",
+            category="mass.solid.value",
             row=int(out_row),
             col=1,
             value=float(m),

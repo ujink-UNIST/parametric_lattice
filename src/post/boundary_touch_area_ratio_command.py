@@ -58,7 +58,7 @@ def extract_boundary_touch_area_ratio_rows(
             TOutRow(
                 index=int(r.index),
                 hash=str(r.hash),
-                category="boundary_touch_area_ratio",
+                category="area.boundary_contact.ratio",
                 row=int(r.row),
                 col=int(r.col),
                 value=float(v),

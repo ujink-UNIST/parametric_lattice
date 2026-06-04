@@ -16,6 +16,7 @@ _SIM_TYPE_TO_ROW: dict[str, int] = {
     "yz": 4,
     "xz": 5,
     "xy": 6,
+    "xyz": 7,
 }
 
 
@@ -126,7 +127,7 @@ def extract_boundary_force_rows(
                 TOutRow(
                     index=case_index,
                     hash=case_hash,
-                    category="boundary_force",
+                    category="force.boundary.value",
                     row=int(out_row),
                     col=int(_col_index(face_axis, force_comp)),
                     value=v,

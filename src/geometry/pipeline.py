@@ -13,7 +13,6 @@ from geometry.keypoint_command import (
     build_keypoint_commands_,
 )
 from geometry.line_command import build_line_commands_
-from geometry.mid_keypoint_command import build_mid_keypoint_commands_
 from geometry.orientation_keypoint_command import (
     build_beam_orientation_keypoint_commands_,
 )
@@ -26,12 +25,6 @@ def geometry_commands(
     profile_params: ProfileParams,
 ) -> ApdlCommands:
 
-    mid_kp_cmds, joint_segments = build_mid_keypoint_commands_(
-        unit_cell,
-        geometry_params,
-        profile_params,
-    )
-
     return (
         (
             "",
@@ -39,8 +32,5 @@ def geometry_commands(
         )
         + build_keypoint_commands_(unit_cell, geometry_params)
         + build_beam_orientation_keypoint_commands_(unit_cell, geometry_params)
-        + mid_kp_cmds
-        + build_line_commands_(
-            unit_cell, element_type, joint_segments
-        )
+        + build_line_commands_(unit_cell, element_type)
     )

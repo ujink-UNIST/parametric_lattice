@@ -119,8 +119,8 @@ def _set_status_pending(book: xw.Book, cell: xw.Range | None) -> None:
 def _set_status_running(book: xw.Book, cell: xw.Range | None) -> None:
     if cell is None:
         return
-    # Mirror the global spinner cell (Sheet1!A1) while this case runs.
-    cell.formula = "=Sheet1!$A$1"
+    # Mirror the global spinner cell (Input!A1) while this case runs.
+    cell.formula = "=Input!$A$1"
     _style_status_cell(cell, fill_rgb=_RUNNING_COLOR, font_rgb=_RUNNING_FONT)
     _doevents(book)
 
@@ -326,7 +326,7 @@ def run_selected_postprocess(
         if i in selected_set:
             selected.append(sim_case)
 
-    run_postprocess(book, tuple(selected), output_header)
+    run_postprocess(book, tuple(selected), output_header, source_inputs=inputs)
 
 
 def run_all(book: xw.Book) -> None:
@@ -338,17 +338,20 @@ def selected_input_indices(
     book: xw.Book,
     table_key: str = _INPUT_TABLE,
 ) -> tuple[int, ...] | None:
-    """Return 0-based indices within the input table body for current selection.
+    """Return 0-based visible row indices within the input table body.
 
-    This is intended for the Excel macro entrypoint (simulation.py) to run only
-    the currently selected rows.
+    Selection is accepted only when it intersects the actual `t_input` body on
+    the same worksheet, in both row and column directions. This prevents rows on
+    other sheets, whole-sheet row selections, or filtered/hidden rows from being
+    interpreted as selected simulation cases.
 
     Rules:
       - If the selection does not intersect the table body, returns None.
       - If the table has no body (empty), returns None.
+      - Hidden rows (including rows hidden by filters) are ignored.
     """
 
-    table: Table = find_table(book, table_key)
+    table, table_sheet = find_table_and_sheet(book, table_key)
     body = table.data_body_range
     if body is None:
         return None
@@ -357,8 +360,20 @@ def selected_input_indices(
     if sel is None:
         return None
 
-    body_first_row = body.row
-    body_last_row = body.row + body.rows.count - 1
+    body_first_row = int(body.row)
+    body_last_row = body_first_row + int(body.rows.count) - 1
+    body_first_col = int(body.column)
+    body_last_col = body_first_col + int(body.columns.count) - 1
+
+    def _same_sheet(area: Any) -> bool:
+        with suppress(Exception):
+            return str(area.sheet.name) == str(table_sheet.name)
+        return False
+
+    def _is_row_hidden(row_num: int) -> bool:
+        with suppress(Exception):
+            return bool(table_sheet.range(f"{row_num}:{row_num}").api.EntireRow.Hidden)
+        return False
 
     # xlwings Range may or may not expose .areas depending on backend/typing.
     sel_any: Any = sel
@@ -367,11 +382,25 @@ def selected_input_indices(
 
     idxs: set[int] = set()
     for area in areas:
-        r0 = area.row
-        r1 = area.row + area.rows.count - 1
+        if not _same_sheet(area):
+            continue
+
+        r0 = int(area.row)
+        r1 = r0 + int(area.rows.count) - 1
+        c0 = int(area.column)
+        c1 = c0 + int(area.columns.count) - 1
+
+        # Require row AND column intersection with the t_input body range.
         rr0 = max(r0, body_first_row)
         rr1 = min(r1, body_last_row)
+        cc0 = max(c0, body_first_col)
+        cc1 = min(c1, body_last_col)
+        if rr0 > rr1 or cc0 > cc1:
+            continue
+
         for r in range(rr0, rr1 + 1):
+            if _is_row_hidden(r):
+                continue
             idxs.add(r - body_first_row)
 
     return tuple(sorted(idxs)) if idxs else None
@@ -449,6 +478,12 @@ def run_cases(
             status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
             _set_status_running(book, status_cell)
             hb.tick()
+
+            if _is_aggregate_sim_type(sim_case.post_mesh_spec.setup.sim_type):
+                # Aggregate rows (static=100, total=101) are postprocess-only.
+                # They combine already-computed cases and never run MAPDL solve.
+                _set_status_skip(book, status_cell)
+                continue
 
             case_key = sim_case.to_string()
             case_hash = build_case_hash(case_key)
@@ -652,6 +687,8 @@ def run_postprocess(
     book: xw.Book,
     inputs: tuple[SimCase, ...],
     output_header: Header,
+    *,
+    source_inputs: tuple[SimCase, ...] | None = None,
 ) -> None:
     hb = UIHeartbeat(book)
 
@@ -661,7 +698,7 @@ def run_postprocess(
 
     Extraction produces a flat list of :class:`post.row.TOutRow` and writes them
     into the output table with columns:
-      index, hash, category, metric, component, value, unit
+      hash, category, row, col, value, unit
 
     NOTE: `output_header` is accepted for backward compatibility with call sites
     but is not used.
@@ -678,33 +715,57 @@ def run_postprocess(
     # TODO: make this configurable from Excel once the schema is finalized.
     requested_needed: dict[str, int] = {
         # Static (default)
-        "volume": 1,
-        "mass": 1,
-        "volume_fraction": 1,
-        "stress_vol_sum": 1,
-        "energy_sum": 1,
-        "stress_vol_avg": 1,
-        "energy_vol_avg": 1,
-        "boundary_force": 1,
-        "boundary_moment": 1,
-        "boundary_traction": 1,
-        "boundary_stress": 1,
-        "boundary_modulus": 1,
-        "boundary_modulus_ratio": 1,
-        "effective_youngs_modulus": 1,
-        "effective_shear_modulus": 1,
-        "effective_youngs_modulus_ratio": 1,
-        "effective_shear_modulus_ratio": 1,
-        "specific_youngs_modulus": 1,
-        "specific_shear_modulus": 1,
-        "boundary_touch_area": 1,
-        "boundary_touch_area_ratio": 1,
-        "contact_traction": 1,
-        "contact_stress": 1,
+        "volume.solid.value": 1,
+        "mass.solid.value": 1,
+        "volume_fraction.cell.value": 1,
+        "element.count": 1,
+        "stress.volume.sum": 1,
+        "energy.strain.total": 1,
+        "energy.strain_density.reference": 1,
+        "stress.volume.avg": 1,
+        "energy.strain_density.mean": 1,
+        "energy.strain_density.std": 1,
+        "energy.strain_density.median": 1,
+        "energy.strain_density.min": 1,
+        "energy.strain_density.max": 1,
+        "energy.strain_density.range": 1,
+        "energy.strain_density.p95": 1,
+        "energy.strain_density.p99": 1,
+        "energy.strain_density.cv": 1,
+        "energy.strain_density.skewness": 1,
+        "energy.strain_density.kurtosis": 1,
+        "energy.strain_density.normalized.mean": 1,
+        "energy.strain_density.normalized.std": 1,
+        "energy.strain_density.normalized.median": 1,
+        "energy.strain_density.normalized.min": 1,
+        "energy.strain_density.normalized.max": 1,
+        "energy.strain_density.normalized.range": 1,
+        "energy.strain_density.normalized.p95": 1,
+        "energy.strain_density.normalized.p99": 1,
+        "energy.strain_density.normalized.cv": 1,
+        "energy.strain_density.normalized.skewness": 1,
+        "energy.strain_density.normalized.kurtosis": 1,
+        "force.boundary.value": 1,
+        "moment.boundary.value": 1,
+        "traction.boundary.value": 1,
+        "stress.boundary.value": 1,
+        "modulus.boundary.value": 1,
+        "modulus.boundary.ratio": 1,
+        "modulus.effective.youngs": 1,
+        "modulus.effective.shear": 1,
+        "modulus.effective.bulk": 1,
+        "modulus.effective.youngs.ratio": 1,
+        "modulus.effective.shear.ratio": 1,
+        "modulus.effective.youngs.specific": 1,
+        "modulus.effective.shear.specific": 1,
+        "area.boundary_contact.value": 1,
+        "area.boundary_contact.ratio": 1,
+        "traction.contact.value": 1,
+        "stress.contact.value": 1,
         # Modal (default)
-        **{f"res_freq_{i}": 1 for i in range(1, 21)},
-        **{f"part_factor_{i}": 1 for i in range(1, 21)},
-        **{f"eff_modal_mass_{i}": 1 for i in range(1, 21)},
+        **{f"res_freq_{i}": 1 for i in range(1, 11)},
+        **{f"part_factor_{i}": 1 for i in range(1, 11)},
+        **{f"eff_modal_mass_{i}": 1 for i in range(1, 11)},
     }
 
     # Compute-time needed = requested + all prerequisites.
@@ -732,6 +793,7 @@ def run_postprocess(
         extract_effective_shear_modulus_rows,
         extract_effective_youngs_modulus_rows,
     )
+    from post.effective_bulk_modulus_command import extract_effective_bulk_modulus_rows
     from post.mass_command import extract_mass_rows
     from post.volume_fraction_command import extract_volume_fraction_rows
     from post.specific_moduli_command import (
@@ -743,10 +805,33 @@ def run_postprocess(
         extract_effective_youngs_modulus_ratio_rows,
     )
     from post.volume_metrics_command import (
-        extract_volume_avg_energy_rows,
+        extract_element_count_rows,
+        extract_reference_strain_density_rows,
+        extract_volume_mean_normalized_strain_density_rows,
+        extract_volume_mean_strain_density_rows,
+        extract_volume_median_normalized_strain_density_rows,
+        extract_volume_median_strain_density_rows,
         extract_volume_avg_stress_rows,
+        extract_volume_cv_normalized_strain_density_rows,
+        extract_volume_cv_strain_density_rows,
         extract_volume_energy_rows,
+        extract_volume_kurtosis_normalized_strain_density_rows,
+        extract_volume_max_normalized_strain_density_rows,
+        extract_volume_max_strain_density_rows,
+        extract_volume_min_normalized_strain_density_rows,
+        extract_volume_min_strain_density_rows,
+        extract_volume_p95_normalized_strain_density_rows,
+        extract_volume_p95_strain_density_rows,
+        extract_volume_p99_normalized_strain_density_rows,
+        extract_volume_p99_strain_density_rows,
+        extract_volume_range_normalized_strain_density_rows,
+        extract_volume_range_strain_density_rows,
+        extract_volume_skewness_normalized_strain_density_rows,
+        extract_volume_skewness_strain_density_rows,
         extract_volume_stress_rows,
+        extract_volume_std_normalized_strain_density_rows,
+        extract_volume_std_strain_density_rows,
+        extract_volume_kurtosis_strain_density_rows,
     )
     from post.modal_command import (
         extract_effective_modal_mass_rows,
@@ -755,9 +840,156 @@ def run_postprocess(
     )
     from post.context import PostprocessContext
     from post.row import T_OUT_COLUMNS
-    from post.sim_case_meta import META_COLUMNS
 
     output_table: Table = find_table(book, _OUTPUT_TABLE)
+
+    # Aggregate rows:
+    #   sim_type=100 (or "static") combines xx, yy, zz, xy, yz, xz.
+    #   sim_type=101 (or "total") combines static + modal + modal_ff.
+    # Aggregates do not run MAPDL; they copy rows from required per-case caches
+    # under the aggregate row's own hash. Missing source cases/caches are errors.
+    source_by_group_and_type: dict[tuple[str, str], SimCase] = {}
+    for src_case in (source_inputs if source_inputs is not None else inputs):
+        src_type = _canonical_sim_type(src_case.post_mesh_spec.setup.sim_type)
+        if _is_aggregate_sim_type(src_type):
+            continue
+        source_by_group_and_type[(src_case.to_string_without_sim_type(), src_type)] = src_case
+
+    def _write_aggregate_rows(aggregate_case: SimCase) -> None:
+        aggregate_type = _canonical_sim_type(aggregate_case.post_mesh_spec.setup.sim_type)
+        if aggregate_type == "100":
+            required_types = ("xx", "yy", "zz", "xy", "yz", "xz")
+        elif aggregate_type == "101":
+            required_types = ("xx", "yy", "zz", "xy", "yz", "xz", "modal", "modal_ff")
+        else:
+            raise ValueError(f"Not an aggregate sim_type: {aggregate_case.post_mesh_spec.setup.sim_type!r}")
+
+        group_key = aggregate_case.to_string_without_sim_type()
+        aggregate_hash = build_case_hash(aggregate_case.to_string())
+
+        from post.post_cache import (
+            PostCache,
+            cache_path_for_case,
+            load_post_cache,
+            make_key,
+            parse_key,
+            save_post_cache,
+        )
+        from post.sim_case_meta import sim_case_meta
+        from post.unit_resolver import unit_for_category
+
+        out_rows: list[dict[str, Any]] = []
+        aggregate_cache = PostCache(
+            case_hash=aggregate_hash,
+            sim_case_meta=sim_case_meta(aggregate_case),
+            rows={},
+        )
+        missing: list[str] = []
+        static_tensor_values: dict[tuple[int, int], float] = {}
+
+        for required_type in required_types:
+            src_case = source_by_group_and_type.get((group_key, required_type))
+            if src_case is None:
+                missing.append(required_type)
+                continue
+
+            src_hash = build_case_hash(src_case.to_string())
+            cache_path = cache_path_for_case(
+                artifacts_case_dir=case_artifacts_root,
+                case_hash=src_hash,
+            )
+            cache = load_post_cache(cache_path, case_hash=src_hash)
+            if not cache.rows:
+                missing.append(f"{required_type}:post_cache")
+                continue
+
+            for k, v in cache.rows.items():
+                try:
+                    cat, r_i, c_i = parse_key(k)
+                except Exception:
+                    continue
+
+                aggregate_cache.rows[make_key(str(cat), int(r_i), int(c_i))] = float(v)
+
+                if str(cat) == "modulus.boundary.value":
+                    static_tensor_values[(int(r_i), int(c_i))] = float(v)
+
+                out_rows.append(
+                    {
+                        "hash": aggregate_hash,
+                        "category": str(cat),
+                        "row": int(r_i),
+                        "col": int(c_i),
+                        "value": float(v),
+                        "unit": unit_for_category(str(cat)),
+                    }
+                )
+
+        # Equivalent elastic stiffness/compliance tensors for static/total aggregates.
+        # Stiffness is assembled from the six static load-case boundary modulus rows:
+        #   stiffness.elastic.tensor[row,col] = stress_component / applied_strain (MPa)
+        #   row/col order = 1..6 in [xx, yy, zz, yz, xz, xy]
+        # Stiffness is cache-only; compliance is cache + Excel t_out.
+        stiffness = np.empty((6, 6), dtype=float)
+        for r_i in range(1, 7):
+            for c_i in range(1, 7):
+                v = static_tensor_values.get((r_i, c_i))
+                if v is None:
+                    missing.append(f"stiffness.elastic.tensor[{r_i},{c_i}]")
+                    stiffness[r_i - 1, c_i - 1] = np.nan
+                    continue
+                stiffness[r_i - 1, c_i - 1] = float(v)
+                aggregate_cache.rows[make_key("stiffness.elastic.tensor", r_i, c_i)] = float(v)
+
+        if not missing:
+            try:
+                compliance = np.linalg.inv(stiffness)
+            except np.linalg.LinAlgError as e:
+                label = "static=100" if aggregate_type == "100" else "total=101"
+                raise RuntimeError(
+                    f"Cannot build compliance.elastic.tensor for {label} aggregate "
+                    f"hash={aggregate_hash}: stiffness tensor is singular"
+                ) from e
+
+            if not np.all(np.isfinite(compliance)):
+                label = "static=100" if aggregate_type == "100" else "total=101"
+                raise RuntimeError(
+                    f"Cannot build compliance.elastic.tensor for {label} aggregate "
+                    f"hash={aggregate_hash}: non-finite inverse values"
+                )
+
+            for r_i in range(1, 7):
+                for c_i in range(1, 7):
+                    v = float(compliance[r_i - 1, c_i - 1])
+                    aggregate_cache.rows[make_key("compliance.elastic.tensor", r_i, c_i)] = v
+                    out_rows.append(
+                        {
+                            "hash": aggregate_hash,
+                            "category": "compliance.elastic.tensor",
+                            "row": r_i,
+                            "col": c_i,
+                            "value": v,
+                            "unit": unit_for_category("compliance.elastic.tensor"),
+                        }
+                    )
+
+        if missing:
+            label = "static=100" if aggregate_type == "100" else "total=101"
+            raise RuntimeError(
+                f"Cannot build {label} aggregate for hash={aggregate_hash}: "
+                f"missing required case/cache(s): {', '.join(missing)}"
+            )
+
+        save_post_cache(
+            cache_path_for_case(artifacts_case_dir=case_artifacts_root, case_hash=aggregate_hash),
+            aggregate_cache,
+        )
+
+        upsert_long_rows(
+            table=output_table,
+            rows=out_rows,
+            required_columns=T_OUT_COLUMNS,
+        )
 
     # We upsert to t_out incrementally per case for better UI responsiveness.
 
@@ -783,6 +1015,17 @@ def run_postprocess(
                 status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
                 _set_status_running(book, status_cell)
                 hb.tick()
+
+                if _is_aggregate_sim_type(sim_case.post_mesh_spec.setup.sim_type):
+                    try:
+                        _write_aggregate_rows(sim_case)
+                    except Exception:
+                        _set_status_fail(book, status_cell)
+                        hb.tick(force=True)
+                        raise
+                    _set_status_done(book, status_cell)
+                    hb.tick(force=True)
+                    continue
 
                 sim_type = str(sim_case.post_mesh_spec.setup.sim_type)
                 allowed_needed: dict[str, int] = {
@@ -907,146 +1150,290 @@ def run_postprocess(
                 # Extract & cache anything we actually computed this run.
                 # Write to Excel only if the prefix was explicitly requested.
 
-                if "boundary_force" in allowed_needed and "boundary_force" in compute_needed:
+                if "force.boundary.value" in allowed_needed and "force.boundary.value" in compute_needed:
                     rows = extract_boundary_force_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="N")
                     _cache_rows(rows)
-                    if "boundary_force" in allowed_requested:
+                    if "force.boundary.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_moment" in allowed_needed and "boundary_moment" in compute_needed:
+                if "moment.boundary.value" in allowed_needed and "moment.boundary.value" in compute_needed:
                     rows = extract_boundary_moment_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="N*mm")
                     _cache_rows(rows)
-                    if "boundary_moment" in allowed_requested:
+                    if "moment.boundary.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_traction" in allowed_needed and "boundary_traction" in compute_needed:
+                if "traction.boundary.value" in allowed_needed and "traction.boundary.value" in compute_needed:
                     rows = extract_boundary_traction_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "boundary_traction" in allowed_requested:
+                    if "traction.boundary.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_stress" in allowed_needed and "boundary_stress" in compute_needed:
+                if "stress.boundary.value" in allowed_needed and "stress.boundary.value" in compute_needed:
                     rows = extract_boundary_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "boundary_stress" in allowed_requested:
+                    if "stress.boundary.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_modulus" in allowed_needed and "boundary_modulus" in compute_needed:
+                if "modulus.boundary.value" in allowed_needed and "modulus.boundary.value" in compute_needed:
                     rows = extract_boundary_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "boundary_modulus" in allowed_requested:
+                    if "modulus.boundary.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_modulus_ratio" in allowed_needed and "boundary_modulus_ratio" in compute_needed:
+                if "modulus.boundary.ratio" in allowed_needed and "modulus.boundary.ratio" in compute_needed:
                     rows = extract_boundary_modulus_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
                     _cache_rows(rows)
-                    if "boundary_modulus_ratio" in allowed_requested:
+                    if "modulus.boundary.ratio" in allowed_requested:
                         _add_rows(rows)
 
-                if "effective_youngs_modulus" in allowed_needed and "effective_youngs_modulus" in compute_needed:
+                if "modulus.effective.youngs" in allowed_needed and "modulus.effective.youngs" in compute_needed:
                     rows = extract_effective_youngs_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "effective_youngs_modulus" in allowed_requested:
+                    if "modulus.effective.youngs" in allowed_requested:
                         _add_rows(rows)
 
-                if "effective_shear_modulus" in allowed_needed and "effective_shear_modulus" in compute_needed:
+                if "modulus.effective.shear" in allowed_needed and "modulus.effective.shear" in compute_needed:
                     rows = extract_effective_shear_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "effective_shear_modulus" in allowed_requested:
+                    if "modulus.effective.shear" in allowed_requested:
                         _add_rows(rows)
 
-                if "effective_youngs_modulus_ratio" in allowed_needed and "effective_youngs_modulus_ratio" in compute_needed:
+                if "modulus.effective.bulk" in allowed_needed and "modulus.effective.bulk" in compute_needed:
+                    rows = extract_effective_bulk_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
+                    _cache_rows(rows)
+                    if "modulus.effective.bulk" in allowed_requested:
+                        _add_rows(rows)
+
+                if "modulus.effective.youngs.ratio" in allowed_needed and "modulus.effective.youngs.ratio" in compute_needed:
                     rows = extract_effective_youngs_modulus_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
                     _cache_rows(rows)
-                    if "effective_youngs_modulus_ratio" in allowed_requested:
+                    if "modulus.effective.youngs.ratio" in allowed_requested:
                         _add_rows(rows)
 
-                if "effective_shear_modulus_ratio" in allowed_needed and "effective_shear_modulus_ratio" in compute_needed:
+                if "modulus.effective.shear.ratio" in allowed_needed and "modulus.effective.shear.ratio" in compute_needed:
                     rows = extract_effective_shear_modulus_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
                     _cache_rows(rows)
-                    if "effective_shear_modulus_ratio" in allowed_requested:
+                    if "modulus.effective.shear.ratio" in allowed_requested:
                         _add_rows(rows)
 
-                if "specific_youngs_modulus" in allowed_needed and "specific_youngs_modulus" in compute_needed:
+                if "modulus.effective.youngs.specific" in allowed_needed and "modulus.effective.youngs.specific" in compute_needed:
                     rows = extract_specific_youngs_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^2/s^2")
                     _cache_rows(rows)
-                    if "specific_youngs_modulus" in allowed_requested:
+                    if "modulus.effective.youngs.specific" in allowed_requested:
                         _add_rows(rows)
 
-                if "specific_shear_modulus" in allowed_needed and "specific_shear_modulus" in compute_needed:
+                if "modulus.effective.shear.specific" in allowed_needed and "modulus.effective.shear.specific" in compute_needed:
                     rows = extract_specific_shear_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^2/s^2")
                     _cache_rows(rows)
-                    if "specific_shear_modulus" in allowed_requested:
+                    if "modulus.effective.shear.specific" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_touch_area" in allowed_needed and "boundary_touch_area" in compute_needed:
+                if "area.boundary_contact.value" in allowed_needed and "area.boundary_contact.value" in compute_needed:
                     rows = extract_boundary_touch_area_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^2")
                     _cache_rows(rows)
-                    if "boundary_touch_area" in allowed_requested:
+                    if "area.boundary_contact.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "boundary_touch_area_ratio" in allowed_needed and "boundary_touch_area_ratio" in compute_needed:
+                if "area.boundary_contact.ratio" in allowed_needed and "area.boundary_contact.ratio" in compute_needed:
                     rows = extract_boundary_touch_area_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
                     _cache_rows(rows)
-                    if "boundary_touch_area_ratio" in allowed_requested:
+                    if "area.boundary_contact.ratio" in allowed_requested:
                         _add_rows(rows)
 
-                if "contact_traction" in allowed_needed and "contact_traction" in compute_needed:
+                if "traction.contact.value" in allowed_needed and "traction.contact.value" in compute_needed:
                     rows = extract_contact_traction_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "contact_traction" in allowed_requested:
+                    if "traction.contact.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "contact_stress" in allowed_needed and "contact_stress" in compute_needed:
+                if "stress.contact.value" in allowed_needed and "stress.contact.value" in compute_needed:
                     rows = extract_contact_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "contact_stress" in allowed_requested:
+                    if "stress.contact.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "volume" in allowed_needed and "volume" in compute_needed:
+                if "volume.solid.value" in allowed_needed and "volume.solid.value" in compute_needed:
                     rows = extract_volume_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^3")
                     _cache_rows(rows)
-                    if "volume" in allowed_requested:
+                    if "volume.solid.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "mass" in allowed_needed and "mass" in compute_needed:
+                if "mass.solid.value" in allowed_needed and "mass.solid.value" in compute_needed:
                     rows = extract_mass_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="kg")
                     _cache_rows(rows)
-                    if "mass" in allowed_requested:
+                    if "mass.solid.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "volume_fraction" in allowed_needed and "volume_fraction" in compute_needed:
+                if "volume_fraction.cell.value" in allowed_needed and "volume_fraction.cell.value" in compute_needed:
                     rows = extract_volume_fraction_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
                     _cache_rows(rows)
-                    if "volume_fraction" in allowed_requested:
+                    if "volume_fraction.cell.value" in allowed_requested:
                         _add_rows(rows)
 
-                if "stress_vol_sum" in allowed_needed and "stress_vol_sum" in compute_needed:
+                if "stress.volume.sum" in allowed_needed and "stress.volume.sum" in compute_needed:
                     rows = extract_volume_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa*mm^3")
                     _cache_rows(rows)
-                    if "stress_vol_sum" in allowed_requested:
+                    if "stress.volume.sum" in allowed_requested:
                         _add_rows(rows)
 
-                if "stress_vol_avg" in allowed_needed and "stress_vol_avg" in compute_needed:
+                if "stress.volume.avg" in allowed_needed and "stress.volume.avg" in compute_needed:
                     rows = extract_volume_avg_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
                     _cache_rows(rows)
-                    if "stress_vol_avg" in allowed_requested:
+                    if "stress.volume.avg" in allowed_requested:
                         _add_rows(rows)
 
-                if "energy_sum" in allowed_needed and "energy_sum" in compute_needed:
+                if "energy.strain.total" in allowed_needed and "energy.strain.total" in compute_needed:
                     rows = extract_volume_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ")
                     _cache_rows(rows)
-                    if "energy_sum" in allowed_requested:
+                    if "energy.strain.total" in allowed_requested:
                         _add_rows(rows)
 
-                if "energy_vol_avg" in allowed_needed and "energy_vol_avg" in compute_needed:
-                    rows = extract_volume_avg_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                if "element.count" in allowed_needed and "element.count" in compute_needed:
+                    rows = extract_element_count_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
                     _cache_rows(rows)
-                    if "energy_vol_avg" in allowed_requested:
+                    if "element.count" in allowed_requested:
                         _add_rows(rows)
 
-                # Modal outputs (mode 1..20)
-                for i in range(1, 21):
+                if "energy.strain_density.reference" in allowed_needed and "energy.strain_density.reference" in compute_needed:
+                    rows = extract_reference_strain_density_rows(ctx=ctx, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.reference" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.mean" in allowed_needed and "energy.strain_density.mean" in compute_needed:
+                    rows = extract_volume_mean_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.mean" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.std" in allowed_needed and "energy.strain_density.std" in compute_needed:
+                    rows = extract_volume_std_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.std" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.median" in allowed_needed and "energy.strain_density.median" in compute_needed:
+                    rows = extract_volume_median_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.median" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.min" in allowed_needed and "energy.strain_density.min" in compute_needed:
+                    rows = extract_volume_min_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.min" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.max" in allowed_needed and "energy.strain_density.max" in compute_needed:
+                    rows = extract_volume_max_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.max" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.range" in allowed_needed and "energy.strain_density.range" in compute_needed:
+                    rows = extract_volume_range_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.range" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.p95" in allowed_needed and "energy.strain_density.p95" in compute_needed:
+                    rows = extract_volume_p95_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.p95" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.p99" in allowed_needed and "energy.strain_density.p99" in compute_needed:
+                    rows = extract_volume_p99_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
+                    _cache_rows(rows)
+                    if "energy.strain_density.p99" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.cv" in allowed_needed and "energy.strain_density.cv" in compute_needed:
+                    rows = extract_volume_cv_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.cv" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.skewness" in allowed_needed and "energy.strain_density.skewness" in compute_needed:
+                    rows = extract_volume_skewness_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.skewness" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.kurtosis" in allowed_needed and "energy.strain_density.kurtosis" in compute_needed:
+                    rows = extract_volume_kurtosis_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.kurtosis" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.mean" in allowed_needed and "energy.strain_density.normalized.mean" in compute_needed:
+                    rows = extract_volume_mean_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.mean" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.std" in allowed_needed and "energy.strain_density.normalized.std" in compute_needed:
+                    rows = extract_volume_std_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.std" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.median" in allowed_needed and "energy.strain_density.normalized.median" in compute_needed:
+                    rows = extract_volume_median_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.median" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.min" in allowed_needed and "energy.strain_density.normalized.min" in compute_needed:
+                    rows = extract_volume_min_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.min" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.max" in allowed_needed and "energy.strain_density.normalized.max" in compute_needed:
+                    rows = extract_volume_max_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.max" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.range" in allowed_needed and "energy.strain_density.normalized.range" in compute_needed:
+                    rows = extract_volume_range_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.range" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.p95" in allowed_needed and "energy.strain_density.normalized.p95" in compute_needed:
+                    rows = extract_volume_p95_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.p95" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.p99" in allowed_needed and "energy.strain_density.normalized.p99" in compute_needed:
+                    rows = extract_volume_p99_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.p99" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.cv" in allowed_needed and "energy.strain_density.normalized.cv" in compute_needed:
+                    rows = extract_volume_cv_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.cv" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.skewness" in allowed_needed and "energy.strain_density.normalized.skewness" in compute_needed:
+                    rows = extract_volume_skewness_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.skewness" in allowed_requested:
+                        _add_rows(rows)
+
+                if "energy.strain_density.normalized.kurtosis" in allowed_needed and "energy.strain_density.normalized.kurtosis" in compute_needed:
+                    rows = extract_volume_kurtosis_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
+                    _cache_rows(rows)
+                    if "energy.strain_density.normalized.kurtosis" in allowed_requested:
+                        _add_rows(rows)
+
+                # Modal outputs (mode 1..10)
+                for i in range(1, 11):
                     key = f"res_freq_{i}"
                     if key in allowed_needed and key in compute_needed:
                         rows = extract_resonant_frequency_rows(
@@ -1093,7 +1480,6 @@ def run_postprocess(
                 from post.post_cache import parse_key
                 from post.unit_resolver import unit_for_category
 
-                case_index = int(ctx.sim_case.row_idx) + 1
                 sync_rows: list[dict[str, Any]] = []
                 for k, v in cache.rows.items():
                     try:
@@ -1101,7 +1487,6 @@ def run_postprocess(
                     except Exception:
                         continue
                     d = {
-                        "index": case_index,
                         "hash": case_hash,
                         "category": str(cat),
                         "row": int(r_i),
@@ -1109,14 +1494,13 @@ def run_postprocess(
                         "value": float(v),
                         "unit": unit_for_category(str(cat)),
                     }
-                    d.update(meta)
                     sync_rows.append(d)
 
                 if sync_rows:
                     upsert_long_rows(
                         table=output_table,
                         rows=sync_rows,
-                        required_columns=T_OUT_COLUMNS + META_COLUMNS,
+                        required_columns=T_OUT_COLUMNS,
                     )
                     hb.tick(force=True)
 
@@ -1129,6 +1513,32 @@ def run_postprocess(
 
 def build_case_hash(key: str) -> str:
     return sha1_hex(key)
+
+
+def _canonical_sim_type(sim_type: object) -> str:
+    """Return canonical sim_type string used for grouping/aggregation."""
+
+    s = str(sim_type).strip().lower()
+    if s in {"100", "100.0", "static"}:
+        return "100"
+    if s in {"101", "101.0", "total"}:
+        return "101"
+    if s == "zx":
+        # User-facing alias; internally shear XZ is represented as xz.
+        return "xz"
+    return s
+
+
+def _is_static_aggregate_sim_type(sim_type: object) -> bool:
+    return _canonical_sim_type(sim_type) == "100"
+
+
+def _is_total_aggregate_sim_type(sim_type: object) -> bool:
+    return _canonical_sim_type(sim_type) == "101"
+
+
+def _is_aggregate_sim_type(sim_type: object) -> bool:
+    return _canonical_sim_type(sim_type) in {"100", "101"}
 
 
 def _ensure_table_column(
@@ -1343,21 +1753,6 @@ def _get_simulation_cases(
                         element_model=read_str(row_values, "element_type"),
                         radius=read_float(row_values, "radius_multiplier"),
                         kappa=read_optional_float(row_values, "kappa"),
-                        joint_area_factor=(
-                            read_optional_float(row_values, "joint_area_factor") or 1.0
-                        ),
-                        joint_length_factor=(
-                            read_optional_float(row_values, "joint_length_factor")
-                            or 1.0
-                        ),
-                        joint_bending_factor=(
-                            read_optional_float(row_values, "joint_bending_factor")
-                            or 1.0
-                        ),
-                        joint_torsion_factor=(
-                            read_optional_float(row_values, "joint_torsion_factor")
-                            or 1.0
-                        ),
                     ),
                     geometry=GeometryParams(
                         cell_name=resolve_cell_name(read_str(row_values, "cell_name")),

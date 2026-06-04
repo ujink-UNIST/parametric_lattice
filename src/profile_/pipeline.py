@@ -28,7 +28,7 @@ def profile_commands(
     geometry_params: GeometryParams,
     profile_params: ProfileParams,
 ) -> ApdlCommands:
-    sec_cmds, edge_section_ids, edge_joint_section_ids = build_section_commands_(
+    sec_cmds, edge_section_ids = build_section_commands_(
         unit_cell,
         geometry_params,
         profile_params,
@@ -43,7 +43,6 @@ def profile_commands(
         + (
             build_line_section_commands_(
                 edge_sec_ids=edge_section_ids,
-                edge_joint_sec_ids=edge_joint_section_ids,
                 orientation_keypoint_start=len(unit_cell.nodes),
             )
             if edge_section_ids
