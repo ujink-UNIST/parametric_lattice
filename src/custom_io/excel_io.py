@@ -167,8 +167,8 @@ Body = tuple[tuple[Any, ...], ...]
 def _apply_path_config_from_book(book: xw.Book) -> None:
     """Apply runtime path config from Excel `t_config` (if present).
 
-    We interpret values *as-is* (no '~' expansion). If a value is provided, it
-    must be an absolute path.
+    We interpret values *as-is* (no '~' expansion). If a relative path is
+    provided, it is resolved relative to the Excel workbook folder.
 
     Expected columns in `t_config` (first row is used):
       - lgf
@@ -184,6 +184,12 @@ def _apply_path_config_from_book(book: xw.Book) -> None:
     cfg = default_config(repo_root)
 
     try:
+        workbook_path = Path(str(book.fullname))
+        relative_base = workbook_path.parent if str(book.fullname).strip() else cfg.repo_root
+    except Exception:
+        relative_base = cfg.repo_root
+
+    try:
         table = find_table(book, _CONFIG_TABLE)
     except KeyError:
         set_path_config(cfg)
@@ -197,7 +203,7 @@ def _apply_path_config_from_book(book: xw.Book) -> None:
     row0 = body[0]
     col_index = {str(h).strip().lower(): i for i, h in enumerate(header)}
 
-    def read_abs(col: str) -> Path | None:
+    def read_path(col: str) -> Path | None:
         i = col_index.get(col)
         if i is None or i >= len(row0):
             return None
@@ -208,13 +214,13 @@ def _apply_path_config_from_book(book: xw.Book) -> None:
         if not s:
             return None
         p = Path(s)
-        if not p.is_absolute():
-            raise ValueError(f"t_config.{col} must be an absolute path (got {s!r})")
-        return p
+        if p.is_absolute():
+            return p
+        return (relative_base / p).resolve()
 
-    lgf_root = read_abs("lgf") or cfg.lgf_root
-    artifacts_root = read_abs("artifacts") or cfg.artifacts_root
-    results_root = read_abs("results") or cfg.results_root
+    lgf_root = read_path("lgf") or cfg.lgf_root
+    artifacts_root = read_path("artifacts") or cfg.artifacts_root
+    results_root = read_path("results") or cfg.results_root
 
     compute_policy_raw = "smart"
     i_pol = col_index.get("compute_policy")

@@ -43,18 +43,44 @@ def _read_existing_required_rows(
     header_idx0: dict[str, int],
 ) -> list[dict[str, Any]]:
     # Always get the current DataBodyRange immediately before reading.
+    # Avoid xlwings slice syntax here: ListObject ranges can become stale or
+    # produce invalid COM Range calls after previous table row additions.
     body = table.data_body_range
     if body is None or body.rows.count <= 0:
         return []
 
-    n_existing = body.rows.count
+    n_existing = int(body.rows.count)
     existing = [dict() for _ in range(n_existing)]
+
+    sheet = body.sheet
+    abs_r0 = int(body.row)
+    abs_r1 = abs_r0 + n_existing - 1
+    body_first_col = int(body.column)
 
     for block in _contiguous_blocks(required, header_idx0):
         names = [n for n, _ in block]
         c0 = block[0][1]
         c1 = block[-1][1]
-        data = body[0:n_existing, c0 : c1 + 1].options(ndim=2).value
+        abs_c0 = body_first_col + c0
+        abs_c1 = body_first_col + c1
+
+        data = None
+        last_error: Exception | None = None
+        for attempt in range(5):
+            try:
+                data = sheet.range((abs_r0, abs_c0), (abs_r1, abs_c1)).options(ndim=2).value
+                last_error = None
+                break
+            except Exception as e:  # noqa: BLE001 - preserve Excel COM context
+                last_error = e
+                time.sleep(0.1 * (attempt + 1))
+        if last_error is not None:
+            raise RuntimeError(
+                "Failed to read existing t_out rows: "
+                f"sheet={getattr(sheet, 'name', '<unknown>')}, "
+                f"r0={abs_r0}, r1={abs_r1}, c0={abs_c0}, c1={abs_c1}"
+            ) from last_error
+
         if data is None:
             continue
         for r_i, row_vals in enumerate(data):
