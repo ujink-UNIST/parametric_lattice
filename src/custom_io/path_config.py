@@ -30,6 +30,12 @@ class PathConfig:
     # MAPDL nproc (optional). If None, let MAPDL decide default.
     nproc: int | None = None
 
+    # Number of solve cases to run per MAPDL launch.
+    #   - 1: restart MAPDL every case (previous behavior)
+    #   - 0: run all selected cases in one MAPDL session
+    #   - N: restart MAPDL every N cases
+    ansys_batch_size: int = 1
+
 
 def _default_repo_root() -> Path:
     return Path(__file__).resolve().parents[2]

@@ -27,6 +27,7 @@ from core.parameters.sim_case import (
     SimCase,
 )
 from custom_io.apdl_io import mapdl_session, run_commands, write_apdl_macro
+from core.apdl_settings import ApdlSettings
 from custom_io.ui_heartbeat import UIHeartbeat
 from custom_io.excel_read import (
     read_float,
@@ -176,6 +177,7 @@ def _apply_path_config_from_book(book: xw.Book) -> None:
       - results
       - compute_policy  (cache|recompute|smart)
       - n_proc          (optional int, MAPDL -np)
+      - ansys_batch_size (optional int; 1=restart every case, 0=one MAPDL for all)
 
     Missing table/columns/cells fall back to repo defaults.
     """
@@ -246,6 +248,27 @@ def _apply_path_config_from_book(book: xw.Book) -> None:
             if nproc <= 0:
                 raise ValueError(f"t_config.n_proc must be positive (got {nproc})")
 
+    ansys_batch_size = int(getattr(cfg, "ansys_batch_size", 1))
+    i_batch = col_index.get("ansys_batch_size")
+    if i_batch is None:
+        # Backward/typing-friendly aliases.
+        i_batch = col_index.get("mapdl_batch_size")
+    if i_batch is None:
+        i_batch = col_index.get("ansys_restart_every")
+    if i_batch is not None and i_batch < len(row0):
+        v = row0[i_batch]
+        if v is not None and str(v).strip():
+            try:
+                ansys_batch_size = int(float(v))
+            except Exception as e:
+                raise ValueError(
+                    f"t_config.ansys_batch_size must be an int (got {v!r})"
+                ) from e
+            if ansys_batch_size < 0:
+                raise ValueError(
+                    f"t_config.ansys_batch_size must be 0 or positive (got {ansys_batch_size})"
+                )
+
     set_path_config(
         PathConfig(
             repo_root=cfg.repo_root,
@@ -254,6 +277,7 @@ def _apply_path_config_from_book(book: xw.Book) -> None:
             results_root=results_root,
             compute_policy=compute_policy_raw,
             nproc=nproc,
+            ansys_batch_size=ansys_batch_size,
         )
     )
 
@@ -460,16 +484,53 @@ def run_cases(
     base_run_dir = cfg.results_root / "case"
     case_artifacts_root = cfg.artifacts_root / "case"
 
-    # Run MAPDL via a separate Python subprocess per case.
-    # Excel/COM updates remain in this parent process.
+    # Reuse one MAPDL session for a configurable number of solve cases.
+    # t_config.ansys_batch_size:
+    #   1 = restart every case (previous behavior)
+    #   0 = run all runnable cases in one MAPDL session
+    #   N = restart every N runnable cases
     session_root = base_run_dir / "__mapdl_session"
     session_root.mkdir(parents=True, exist_ok=True)
+    ansys_batch_size = int(getattr(cfg, "ansys_batch_size", 1))
 
     # Use a stable, non-hash jobname so result filenames don't include the case hash.
     jobname = "case"
 
-    import subprocess
-    import sys
+    active_session = None
+    active_mapdl = None
+    cases_in_session = 0
+    session_index = 0
+
+    def close_active_session() -> None:
+        nonlocal active_session, active_mapdl, cases_in_session
+        if active_session is not None:
+            active_session.__exit__(None, None, None)
+        active_session = None
+        active_mapdl = None
+        cases_in_session = 0
+
+    def ensure_mapdl_session():
+        nonlocal active_session, active_mapdl, cases_in_session, session_index
+        if active_mapdl is not None and (
+            ansys_batch_size == 0 or cases_in_session < ansys_batch_size
+        ):
+            return active_mapdl
+
+        close_active_session()
+        session_index += 1
+        session_dir = session_root / f"batch_{session_index:04d}"
+        session_dir.mkdir(parents=True, exist_ok=True)
+        settings = ApdlSettings(
+            jobname=jobname,
+            run_location=session_dir,
+            cleanup_on_exit=False,
+            nproc=getattr(cfg, "nproc", None),
+        )
+        session = mapdl_session(settings=settings)
+        mapdl = session.__enter__()
+        active_session = session
+        active_mapdl = mapdl
+        return active_mapdl
 
     try:
         # Mark all selected rows as pending up-front.
@@ -659,26 +720,10 @@ def run_cases(
                 },
             )
 
-            # Unique session dir per subprocess to avoid collisions.
-            session_dir = session_root / case_hash
-            session_dir.mkdir(parents=True, exist_ok=True)
-
-            cmd = [
-                sys.executable,
-                "-m",
-                "custom_io.mapdl_worker",
-                "--macro",
-                str(macro_path),
-                "--session-dir",
-                str(session_dir),
-                "--jobname",
-                jobname,
-            ]
-            if getattr(cfg, "nproc", None):
-                cmd += ["--nproc", str(int(cfg.nproc))]
-
             try:
-                subprocess.run(cmd, check=True)
+                mapdl = ensure_mapdl_session()
+                run_commands(mapdl, cwd_cmds + pipeline)
+                cases_in_session += 1
             except Exception:
                 _set_status_fail(book, status_cell)
                 raise
@@ -687,6 +732,8 @@ def run_cases(
     except Exception as e:
         print(f"Error: {e}")
         raise
+    finally:
+        close_active_session()
 
 
 def run_postprocess(
