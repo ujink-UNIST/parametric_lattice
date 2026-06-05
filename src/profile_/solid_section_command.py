@@ -184,7 +184,7 @@ def build_geometry_trim_commands_(
     hx, hy, hz = x / 2, y / 2, z / 2
     max_radius_ratio = max(
         float(beam_type["radius_ratio"])
-        for beam_type in unit_cell.beam_types.values()
+        for beam_type in unit_cell.beam_types
     )
     max_physical_radius = (
         float(profile_params.radius) * max_radius_ratio * float(np.min(geometry_params.size))
