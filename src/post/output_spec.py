@@ -1,3 +1,4 @@
+#output_spec.py
 """Post output specification (long-format t_out).
 
 Unlike the legacy Excel wide-format `t_output` spec, the long-format `t_out`

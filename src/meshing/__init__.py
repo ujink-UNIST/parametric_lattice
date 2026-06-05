@@ -1,5 +1,4 @@
-# __init__.py
-
+#__init__.py
 """Meshing package public helpers."""
 
 from meshing.surface_meshing import (

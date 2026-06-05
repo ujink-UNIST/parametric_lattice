@@ -1,3 +1,6 @@
+#boundary_touch_area.py
+"""Module for boundary touch area functionality in src.custom_io."""
+
 from __future__ import annotations
 
 """Mesh-derived boundary touch area for SOLID meshes.

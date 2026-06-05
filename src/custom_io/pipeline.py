@@ -1,4 +1,5 @@
-# pipeline.py
+#pipeline.py
+"""Module for pipeline functionality in src.custom_io."""
 
 from __future__ import annotations
 

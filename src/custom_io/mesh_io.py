@@ -1,4 +1,5 @@
-# mesh_io.py
+#mesh_io.py
+"""Module for mesh io functionality in src.custom_io."""
 
 from __future__ import annotations
 

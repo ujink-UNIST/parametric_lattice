@@ -1,5 +1,4 @@
-# pipeline.py
-
+#pipeline.py
 """Setup-stage command dispatcher."""
 
 from __future__ import annotations

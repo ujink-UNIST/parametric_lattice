@@ -1,4 +1,5 @@
-# verify.py
+#verify.py
+"""Module for verify functionality in src.preprocess."""
 
 from __future__ import annotations
 

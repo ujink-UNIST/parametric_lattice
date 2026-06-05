@@ -1,4 +1,5 @@
-# section_command.py
+#section_command.py
+"""Module for section command functionality in src.profile_."""
 
 import math
 from typing import Dict, List, Tuple

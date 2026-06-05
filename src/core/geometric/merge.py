@@ -1,4 +1,5 @@
-# merge.py
+#merge.py
+"""Module for merge functionality in src.core.geometric."""
 
 from typing import Sequence
 

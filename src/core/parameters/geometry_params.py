@@ -1,4 +1,5 @@
-# geometry_params.py
+#geometry_params.py
+"""Module for geometry params functionality in src.core.parameters."""
 
 from __future__ import annotations
 

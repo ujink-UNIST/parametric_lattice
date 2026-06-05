@@ -1,4 +1,5 @@
-# pipeline.py
+#pipeline.py
+"""Module for pipeline functionality in src.element_type."""
 
 from core.apdl_commands import ApdlCommands
 from core.parameters.element_type_params import (

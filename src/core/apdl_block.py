@@ -1,4 +1,5 @@
-# apdl_block.py
+#apdl_block.py
+"""Module for apdl block functionality in src.core."""
 
 from core.apdl_commands import ApdlCommands
 

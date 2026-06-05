@@ -1,4 +1,5 @@
-# element_type_params.py
+#element_type_params.py
+"""Module for element type params functionality in src.core.parameters."""
 
 from dataclasses import dataclass
 

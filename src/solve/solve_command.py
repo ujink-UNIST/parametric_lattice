@@ -1,4 +1,5 @@
-# solve_command.py
+#solve_command.py
+"""Module for solve command functionality in src.solve."""
 
 from core.apdl_block import apdl_block
 from core.apdl_commands import ApdlCommands

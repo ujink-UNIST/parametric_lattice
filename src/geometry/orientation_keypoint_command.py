@@ -1,4 +1,5 @@
-# orientation_keypoint_command.py
+#orientation_keypoint_command.py
+"""Module for orientation keypoint command functionality in src.geometry."""
 
 from typing import List, cast
 

@@ -1,4 +1,5 @@
-# lattice_io.py
+#lattice_io.py
+"""Module for lattice io functionality in src.custom_io."""
 
 from typing import Any, cast
 

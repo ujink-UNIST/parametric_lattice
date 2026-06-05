@@ -1,4 +1,5 @@
-# raw_beam.py
+#raw_beam.py
+"""Module for raw beam functionality in src.core.numeric."""
 
 from __future__ import annotations
 

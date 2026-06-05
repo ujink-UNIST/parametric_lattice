@@ -1,4 +1,5 @@
-# geometry_io.py
+#geometry_io.py
+"""Module for geometry io functionality in src.custom_io."""
 
 from __future__ import annotations
 

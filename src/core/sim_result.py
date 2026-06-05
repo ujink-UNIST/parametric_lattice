@@ -1,4 +1,5 @@
-# sim_result.py
+#sim_result.py
+"""Module for sim result functionality in src.core."""
 
 from dataclasses import dataclass
 

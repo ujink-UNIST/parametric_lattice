@@ -1,4 +1,5 @@
-# select.py
+#select.py
+"""Module for select functionality in src.core.geometric."""
 
 from core.apdl_commands import ApdlCommands
 from core.floats.vector import Vector3

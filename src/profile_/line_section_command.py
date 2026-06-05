@@ -1,4 +1,5 @@
-# line_section_command.py
+#line_section_command.py
+"""Module for line section command functionality in src.profile_."""
 
 from __future__ import annotations
 

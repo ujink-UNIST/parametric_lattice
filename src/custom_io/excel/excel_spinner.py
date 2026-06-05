@@ -1,3 +1,6 @@
+#excel_spinner.py
+"""Module for excel spinner functionality in src.custom_io.excel."""
+
 from __future__ import annotations
 
 """Excel cell spinner for long-running RunPython calls.

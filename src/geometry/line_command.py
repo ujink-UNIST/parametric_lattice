@@ -1,4 +1,5 @@
-# line_command.py
+#line_command.py
+"""Module for line command functionality in src.geometry."""
 
 from core.apdl_block import (
     apdl_block,

@@ -1,4 +1,5 @@
-# json_io.py
+#json_io.py
+"""Module for json io functionality in src.custom_io."""
 
 from __future__ import annotations
 

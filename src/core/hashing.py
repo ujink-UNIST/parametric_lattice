@@ -1,3 +1,4 @@
+#hashing.py
 """Hash utilities.
 
 This module centralizes all stable hashing used for artifact keys (case hashes,

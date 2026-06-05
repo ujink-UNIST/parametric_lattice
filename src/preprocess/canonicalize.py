@@ -1,4 +1,5 @@
-# canonicalize.py
+#canonicalize.py
+"""Module for canonicalize functionality in src.preprocess."""
 
 from __future__ import annotations
 

@@ -1,4 +1,5 @@
-# pipeline.py
+#pipeline.py
+"""Module for pipeline functionality in src.solve."""
 
 from core.apdl_commands import ApdlCommands
 from core.parameters.setup_params import SetupParams

@@ -1,3 +1,6 @@
+#pipeline.py
+"""Module for pipeline functionality in src.post."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

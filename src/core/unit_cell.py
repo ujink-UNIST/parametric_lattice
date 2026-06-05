@@ -1,4 +1,5 @@
-# unit_cell.py
+#unit_cell.py
+"""Module for unit cell functionality in src.core."""
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Tuple

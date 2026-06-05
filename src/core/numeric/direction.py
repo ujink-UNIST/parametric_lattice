@@ -1,4 +1,5 @@
-# direction.py
+#direction.py
+"""Module for direction functionality in src.core.numeric."""
 
 from __future__ import annotations
 

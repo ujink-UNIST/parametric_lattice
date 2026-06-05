@@ -1,5 +1,4 @@
-# __init__.py
-
+#__init__.py
 """setup package."""
 
 from .bc_applicator import (

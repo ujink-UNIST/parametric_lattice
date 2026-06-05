@@ -1,4 +1,5 @@
-# setup_params.py
+#setup_params.py
+"""Module for setup params functionality in src.core.parameters."""
 
 from dataclasses import dataclass
 from typing import Any, Tuple

@@ -1,4 +1,5 @@
-# path_safety.py
+#path_safety.py
+"""Module for path safety functionality in src.custom_io."""
 
 from __future__ import annotations
 

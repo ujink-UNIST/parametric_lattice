@@ -1,4 +1,5 @@
-# __init__.py
+#__init__.py
+"""Package initializer for src.geometry."""
 
 from geometry.pipeline import geometry_commands
 

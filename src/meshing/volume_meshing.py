@@ -1,4 +1,5 @@
-# volume_meshing.py
+#volume_meshing.py
+"""Module for volume meshing functionality in src.meshing."""
 
 from __future__ import annotations
 

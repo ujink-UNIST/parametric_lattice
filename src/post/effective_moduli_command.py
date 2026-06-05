@@ -1,3 +1,6 @@
+#effective_moduli_command.py
+"""Module for effective moduli command functionality in src.post."""
+
 from __future__ import annotations
 
 """Effective moduli outputs.

@@ -1,4 +1,5 @@
-# apdl_settings.py
+#apdl_settings.py
+"""Module for apdl settings functionality in src.core."""
 
 from dataclasses import dataclass, field
 from pathlib import Path

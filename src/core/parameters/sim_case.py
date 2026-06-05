@@ -1,4 +1,5 @@
-# sim_case.py
+#sim_case.py
+"""Module for sim case functionality in src.core.parameters."""
 
 from dataclasses import dataclass
 

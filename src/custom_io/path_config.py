@@ -1,3 +1,6 @@
+#path_config.py
+"""Module for path config functionality in src.custom_io."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

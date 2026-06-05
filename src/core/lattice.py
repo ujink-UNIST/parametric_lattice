@@ -1,4 +1,5 @@
-# lattice.py
+#lattice.py
+"""Module for lattice functionality in src.core."""
 
 from fractions import Fraction
 import math

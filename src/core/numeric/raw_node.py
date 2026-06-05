@@ -1,4 +1,5 @@
-# raw_node.py
+#raw_node.py
+"""Module for raw node functionality in src.core.numeric."""
 
 from __future__ import annotations
 

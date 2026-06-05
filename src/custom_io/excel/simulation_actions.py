@@ -1,3 +1,6 @@
+#simulation_actions.py
+"""Module for simulation actions functionality in src.custom_io.excel."""
+
 from __future__ import annotations
 
 import subprocess
@@ -7,31 +10,56 @@ from typing import Protocol
 
 import xlwings as xw  # type: ignore[import-not-found]
 
+from custom_io.excel.config import apply_path_config_from_book
+from custom_io.case_hash import build_case_hash
+from custom_io.excel.cases import get_simulation_cases
+from custom_io.excel.tables import find_table, get_table_data
 from custom_io.excel_io import (
-    _apply_path_config_from_book,
-    _get_simulation_cases,
-    build_case_hash,
-    find_table,
-    get_table_data,
     run_selected,
     run_selected_postprocess,
     selected_input_indices,
 )
-from custom_io.post_cache_sync import sync_post_cache_to_t_out
+from custom_io.post.cache_sync import sync_post_cache_to_t_out
 from custom_io.geometry_io import geometry_hash
 from custom_io.mesh_io import mesh_hash
 from custom_io.path_config import get_path_config
 
 
 class Messenger(Protocol):
-    def info(self, text: str) -> None: ...
+    """Protocol for user-facing Excel action messages."""
+
+    def info(self, text: str) -> None:
+        """Show an informational message.
+
+        Parameters
+        ----------
+        text : str
+            Message text to display.
+        """
+        ...
 
 
 @dataclass(frozen=True)
 class ExcelMessenger:
+    """Display informational messages from Excel actions.
+
+    Parameters
+    ----------
+    book : xw.Book
+        Workbook whose Excel application should display the message.
+    """
+
     book: xw.Book
 
     def info(self, text: str) -> None:
+        """Show a message box or fallback console message.
+
+        Parameters
+        ----------
+        text : str
+            Message text to display.
+        """
+
         # MsgBox is a VBA intrinsic, not an Excel Application COM method,
         # so call it via Application.Run.
         try:
@@ -55,8 +83,18 @@ class ExcelMessenger:
 
 
 class Explorer:
+    """Small wrapper around Windows Explorer actions."""
+
     @staticmethod
     def open_folder(path: Path) -> None:
+        """Open a folder in Windows Explorer, creating it if needed.
+
+        Parameters
+        ----------
+        path : Path
+            Folder path to open.
+        """
+
         path.mkdir(parents=True, exist_ok=True)
         import os
 
@@ -64,6 +102,14 @@ class Explorer:
 
     @staticmethod
     def select_file(path: Path) -> None:
+        """Reveal a file in Windows Explorer.
+
+        Parameters
+        ----------
+        path : Path
+            File path to select.
+        """
+
         p = path.resolve()
         subprocess.Popen(f'explorer /select,"{p}"')
 
@@ -81,7 +127,7 @@ def _get_case_hash_and_lattice_relpath(
 ) -> tuple[str, str]:
     input_table = find_table(book, "t_input")
     header, body = get_table_data(input_table)
-    inputs = _get_simulation_cases(header, body)
+    inputs = get_simulation_cases(header, body)
 
     if row_idx < 0 or row_idx >= len(inputs):
         raise IndexError(f"Row index out of range: {row_idx}")
@@ -93,15 +139,39 @@ def _get_case_hash_and_lattice_relpath(
 
 
 def run_selected_action(book: xw.Book) -> None:
+    """Run solve for the currently selected input rows.
+
+    Parameters
+    ----------
+    book : xw.Book
+        Calling workbook.
+    """
+
     selected_indices = selected_input_indices(book)
     run_selected(book, selected_indices)
 
 
 def run_all_action(book: xw.Book) -> None:
+    """Run solve for every input row in the workbook.
+
+    Parameters
+    ----------
+    book : xw.Book
+        Calling workbook.
+    """
+
     run_selected(book, None)
 
 
 def run_selected_postprocess_action(book: xw.Book) -> None:
+    """Run postprocessing for the currently selected input rows.
+
+    Parameters
+    ----------
+    book : xw.Book
+        Calling workbook.
+    """
+
     msg = ExcelMessenger(book)
     selected_indices = selected_input_indices(book)
     if not selected_indices:
@@ -111,12 +181,30 @@ def run_selected_postprocess_action(book: xw.Book) -> None:
 
 
 def sync_post_cache_action(book: xw.Book) -> None:
+    """Synchronize post cache JSON files into the Excel output table.
+
+    Parameters
+    ----------
+    book : xw.Book
+        Calling workbook.
+    """
+
     sync_post_cache_to_t_out(book)
 
 
 def open_lattice_file_action(repo_root: Path, book: xw.Book) -> None:
+    """Reveal the selected case's lattice file in Windows Explorer.
+
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root passed by the Excel entry-point module.
+    book : xw.Book
+        Calling workbook.
+    """
+
     msg = ExcelMessenger(book)
-    _apply_path_config_from_book(book)
+    apply_path_config_from_book(book)
     cfg = get_path_config()
 
     row_idx = _first_selected_index(book)
@@ -134,8 +222,18 @@ def open_lattice_file_action(repo_root: Path, book: xw.Book) -> None:
 
 
 def open_case_artifacts_action(repo_root: Path, book: xw.Book) -> None:
+    """Open the selected case artifact directory.
+
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root passed by the Excel entry-point module.
+    book : xw.Book
+        Calling workbook.
+    """
+
     msg = ExcelMessenger(book)
-    _apply_path_config_from_book(book)
+    apply_path_config_from_book(book)
     cfg = get_path_config()
 
     row_idx = _first_selected_index(book)
@@ -149,8 +247,18 @@ def open_case_artifacts_action(repo_root: Path, book: xw.Book) -> None:
 
 
 def open_results_action(repo_root: Path, book: xw.Book) -> None:
+    """Open the selected case result directory.
+
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root passed by the Excel entry-point module.
+    book : xw.Book
+        Calling workbook.
+    """
+
     msg = ExcelMessenger(book)
-    _apply_path_config_from_book(book)
+    apply_path_config_from_book(book)
     cfg = get_path_config()
 
     row_idx = _first_selected_index(book)
@@ -164,8 +272,18 @@ def open_results_action(repo_root: Path, book: xw.Book) -> None:
 
 
 def open_geometry_db_action(repo_root: Path, book: xw.Book) -> None:
+    """Open the selected case geometry cache directory.
+
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root passed by the Excel entry-point module.
+    book : xw.Book
+        Calling workbook.
+    """
+
     msg = ExcelMessenger(book)
-    _apply_path_config_from_book(book)
+    apply_path_config_from_book(book)
     cfg = get_path_config()
 
     row_idx = _first_selected_index(book)
@@ -175,7 +293,7 @@ def open_geometry_db_action(repo_root: Path, book: xw.Book) -> None:
 
     input_table = find_table(book, "t_input")
     header, body = get_table_data(input_table)
-    inputs = _get_simulation_cases(header, body)
+    inputs = get_simulation_cases(header, body)
 
     sim_case = inputs[row_idx]
     ghash = geometry_hash(sim_case)
@@ -184,8 +302,18 @@ def open_geometry_db_action(repo_root: Path, book: xw.Book) -> None:
 
 
 def open_mesh_db_action(repo_root: Path, book: xw.Book) -> None:
+    """Open the selected case mesh cache directory.
+
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root passed by the Excel entry-point module.
+    book : xw.Book
+        Calling workbook.
+    """
+
     msg = ExcelMessenger(book)
-    _apply_path_config_from_book(book)
+    apply_path_config_from_book(book)
     cfg = get_path_config()
 
     row_idx = _first_selected_index(book)
@@ -195,7 +323,7 @@ def open_mesh_db_action(repo_root: Path, book: xw.Book) -> None:
 
     input_table = find_table(book, "t_input")
     header, body = get_table_data(input_table)
-    inputs = _get_simulation_cases(header, body)
+    inputs = get_simulation_cases(header, body)
 
     sim_case = inputs[row_idx]
     mhash = mesh_hash(sim_case)

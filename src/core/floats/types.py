@@ -1,5 +1,4 @@
-# types.py
-
+#types.py
 """Centralized numeric type aliases.
 
 These are lightweight *type hints* (mainly for NumPy arrays) used across the

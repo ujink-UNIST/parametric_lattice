@@ -1,4 +1,5 @@
-# apdl_preview.py
+#apdl_preview.py
+"""Module for apdl preview functionality in src."""
 
 from __future__ import annotations
 

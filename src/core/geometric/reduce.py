@@ -1,4 +1,5 @@
-# reduce.py
+#reduce.py
+"""Module for reduce functionality in src.core.geometric."""
 
 from typing import Sequence
 

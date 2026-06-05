@@ -1,4 +1,5 @@
-# raw_edge.py
+#raw_edge.py
+"""Module for raw edge functionality in src.core.numeric."""
 
 from __future__ import annotations
 

@@ -1,3 +1,6 @@
+#contact_command.py
+"""Module for contact command functionality in src.post."""
+
 from __future__ import annotations
 
 """Contact-derived quantities.

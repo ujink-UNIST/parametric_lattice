@@ -1,4 +1,5 @@
-# pipeline.py
+#pipeline.py
+"""Module for pipeline functionality in src.profile_."""
 
 from core.apdl_block import apdl_section
 from core.apdl_commands import ApdlCommands
@@ -64,7 +65,7 @@ def profile_commands(
             )
             + merge_solid_all_commands_(profile_params)
             + build_geometry_trim_commands_(
-                geometry_params, profile_params
+                unit_cell, geometry_params, profile_params
             )
             if isinstance(profile_params, SolidProfileParams)
             else ()

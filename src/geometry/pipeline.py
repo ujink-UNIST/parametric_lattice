@@ -1,4 +1,5 @@
-# pipeline.py
+#pipeline.py
+"""Module for pipeline functionality in src.geometry."""
 
 from core.apdl_block import apdl_block, apdl_section
 from core.apdl_commands import ApdlCommands

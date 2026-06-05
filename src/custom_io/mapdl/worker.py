@@ -1,3 +1,6 @@
+#worker.py
+"""Module for worker functionality in src.custom_io.mapdl."""
+
 from __future__ import annotations
 
 """Subprocess entrypoint for running MAPDL macros.
@@ -15,7 +18,7 @@ It intentionally does *not* touch Excel/COM.
 import argparse
 from pathlib import Path
 
-from custom_io.apdl_io import mapdl_session, run_commands
+from custom_io.mapdl.apdl_io import mapdl_session, run_commands
 from core.apdl_settings import ApdlSettings
 
 
@@ -27,6 +30,20 @@ def _read_macro(path: Path) -> tuple[str, ...]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run a MAPDL macro from a subprocess entry point.
+
+    Parameters
+    ----------
+    argv : list[str] or None, optional
+        Command-line arguments. When ``None``, arguments are read from
+        ``sys.argv`` by ``argparse``.
+
+    Returns
+    -------
+    int
+        Process exit code.
+    """
+
     p = argparse.ArgumentParser(description="Run an APDL macro in a MAPDL subprocess")
     p.add_argument("--macro", required=True, help="Path to .mac file")
     p.add_argument(

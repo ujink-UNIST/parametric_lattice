@@ -1,4 +1,5 @@
-# solid_section_command.py
+#solid_section_command.py
+"""Module for solid section command functionality in src.profile_."""
 
 from typing import List
 
@@ -172,6 +173,7 @@ def merge_solid_all_commands_(
 
 
 def build_geometry_trim_commands_(
+    unit_cell: UnitCell,
     geometry_params: GeometryParams,
     profile_params: ProfileParams,
 ) -> ApdlCommands:
@@ -179,6 +181,15 @@ def build_geometry_trim_commands_(
         return ()
 
     x, y, z = geometry_params.size
+    hx, hy, hz = x / 2, y / 2, z / 2
+    max_radius_ratio = max(
+        float(beam_type["radius_ratio"])
+        for beam_type in unit_cell.beam_types.values()
+    )
+    max_physical_radius = (
+        float(profile_params.radius) * max_radius_ratio * float(np.min(geometry_params.size))
+    )
+    trim_offset = max_physical_radius / 2.0
 
     cmds: list[str] = list(apdl_block(f"""
 
@@ -190,11 +201,14 @@ def build_geometry_trim_commands_(
         (0, y, 0, "Y"),
         (0, 0, z, "Z"),
     ]
-    hx, hy, hz = x / 2, y / 2, z / 2
 
     for i, (dx, dy, dz, axis) in enumerate(directions):
+        bx0, bx1 = ((-hx - trim_offset, hx + trim_offset) if axis == "X" else (-x, x))
+        by0, by1 = ((-hy - trim_offset, hy + trim_offset) if axis == "Y" else (-y, y))
+        bz0, bz1 = ((-hz - trim_offset, hz + trim_offset) if axis == "Z" else (-z, z))
+
         cmds.extend(apdl_block(f"""
-{apdl_comment(f"Step {i+1}: Extend geometry along {axis}-axis and trim to unit cell boundary")}
+{apdl_comment(f"Step {i+1}: Extend geometry along {axis}-axis and trim with half max physical radius offset")}
 ALLSEL
 VSEL,S,VOLU,,1
 VGEN,2,ALL,,,{ -dx },{ -dy },{ -dz }
@@ -204,7 +218,7 @@ ALLSEL
 VADD,ALL
 NUMMRG,ALL
 NUMCMP,ALL
-BLOCK,{-x+dx*0.49},{x-dx*0.49},{-y+dy*0.49},{y-dy*0.49},{-z+dz*0.49},{z-dz*0.49}
+BLOCK,{bx0},{bx1},{by0},{by1},{bz0},{bz1}
 VINTF,1,2
 NUMMRG,ALL
 NUMCMP,ALL

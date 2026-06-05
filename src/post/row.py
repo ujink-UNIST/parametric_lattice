@@ -1,3 +1,6 @@
+#row.py
+"""Module for row functionality in src.post."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

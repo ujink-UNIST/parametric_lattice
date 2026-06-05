@@ -1,4 +1,5 @@
-# material_type_command.py
+#material_type_command.py
+"""Module for material type command functionality in src.material."""
 
 from core.apdl_commands import ApdlCommands
 from core.parameters.material_params import MaterialParams

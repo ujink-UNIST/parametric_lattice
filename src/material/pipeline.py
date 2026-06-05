@@ -1,4 +1,5 @@
-# pipeline.py
+#pipeline.py
+"""Module for pipeline functionality in src.material."""
 
 from core.apdl_commands import ApdlCommands
 from core.parameters.material_params import MaterialParams

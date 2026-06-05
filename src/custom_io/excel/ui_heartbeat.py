@@ -1,3 +1,6 @@
+#ui_heartbeat.py
+"""Module for ui heartbeat functionality in src.custom_io.excel."""
+
 from __future__ import annotations
 
 """Excel UI heartbeat.

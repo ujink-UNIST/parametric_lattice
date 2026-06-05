@@ -1,4 +1,5 @@
-# material_params.py
+#material_params.py
+"""Module for material params functionality in src.core.parameters."""
 
 from dataclasses import dataclass
 from typing import Any, Tuple

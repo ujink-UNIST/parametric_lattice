@@ -1,3 +1,6 @@
+#cache_sync.py
+"""Module for cache sync functionality in src.custom_io.post."""
+
 from __future__ import annotations
 
 """Sync/upgrade post_cache.json into Excel t_out.
@@ -5,7 +8,7 @@ from __future__ import annotations
 This macro reads per-case JSON caches and upserts their contents into the
 `t_out` table, resolving units at runtime.
 
-It is intended to be called from an Excel button via excel_integration actions.
+It is intended to be called from an Excel button via custom_io.excel actions.
 """
 
 from contextlib import suppress
@@ -15,21 +18,19 @@ from typing import Any
 import xlwings as xw  # type: ignore[import-not-found]
 from xlwings.main import Table  # type: ignore[import-not-found]
 
-from custom_io.excel_io import (
-    _apply_path_config_from_book,
-    build_case_hash,
-    find_table,
-    get_table_data,
-    _INPUT_TABLE,
-    _OUTPUT_TABLE,
-    _set_status_done,
-    _set_status_fail,
-    _set_status_pending,
-    _set_status_running,
-    _status_range_for_input_row,
+from custom_io.case_hash import build_case_hash
+from custom_io.excel.cases import get_simulation_cases
+from custom_io.excel.config import apply_path_config_from_book
+from custom_io.excel.status import (
+    set_status_done,
+    set_status_fail,
+    set_status_pending,
+    set_status_running,
+    status_range_for_input_row,
 )
-from custom_io.excel_write_long import upsert_long_rows
-from custom_io.ui_heartbeat import UIHeartbeat
+from custom_io.excel.tables import find_table, get_table_data
+from custom_io.excel.write_long import upsert_long_rows
+from custom_io.excel.ui_heartbeat import UIHeartbeat
 from post.post_cache import cache_path_for_case, load_post_cache_lenient, parse_key, save_post_cache
 from post.row import T_OUT_COLUMNS
 from post.sim_case_meta import sim_case_meta
@@ -37,25 +38,18 @@ from post.unit_resolver import unit_for_category
 from core.parameters.sim_case import SimCase
 
 
-def _get_simulation_cases(input_header, input_body) -> tuple[SimCase, ...]:
-    # Import locally to avoid circular imports with excel_io
-    from custom_io.excel_io import _get_simulation_cases as _g
-
-    return _g(input_header, input_body)
-
-
 def sync_post_cache_to_t_out(book: xw.Book) -> None:
     """Sync all cases' post_cache.json into the Excel t_out table."""
 
-    _apply_path_config_from_book(book)
+    apply_path_config_from_book(book)
 
     hb = UIHeartbeat(book)
 
-    input_table: Table = find_table(book, _INPUT_TABLE)
+    input_table: Table = find_table(book, "t_input")
     input_header, input_body = get_table_data(input_table)
-    inputs: tuple[SimCase, ...] = _get_simulation_cases(input_header, input_body)
+    inputs: tuple[SimCase, ...] = get_simulation_cases(input_header, input_body)
 
-    output_table: Table = find_table(book, _OUTPUT_TABLE)
+    output_table: Table = find_table(book, "t_out")
 
     from custom_io.path_config import get_path_config
 
@@ -64,12 +58,12 @@ def sync_post_cache_to_t_out(book: xw.Book) -> None:
 
     try:
         for sim_case in inputs:
-            _set_status_pending(book, _status_range_for_input_row(book, int(sim_case.row_idx)))
+            set_status_pending(book, status_range_for_input_row(book, int(sim_case.row_idx)))
             hb.tick()
 
         for sim_case in inputs:
-            status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
-            _set_status_running(book, status_cell)
+            status_cell = status_range_for_input_row(book, int(sim_case.row_idx))
+            set_status_running(book, status_cell)
             hb.tick()
 
             case_hash = build_case_hash(sim_case.to_string())
@@ -105,11 +99,11 @@ def sync_post_cache_to_t_out(book: xw.Book) -> None:
             # Save upgraded cache (rewrite)
             save_post_cache(p, cache)
 
-            _set_status_done(book, status_cell)
+            set_status_done(book, status_cell)
             hb.tick()
 
     except Exception:
         # Best-effort mark all as fail
         for sim_case in inputs:
-            _set_status_fail(book, _status_range_for_input_row(book, int(sim_case.row_idx)))
+            set_status_fail(book, status_range_for_input_row(book, int(sim_case.row_idx)))
         raise

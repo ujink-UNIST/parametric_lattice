@@ -1,4 +1,5 @@
-# substep_command.py
+#substep_command.py
+"""Module for substep command functionality in src.solve."""
 
 from core.apdl_block import apdl_block
 from core.apdl_commands import ApdlCommands

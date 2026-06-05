@@ -1,4 +1,5 @@
-# keypoint_command.py
+#keypoint_command.py
+"""Module for keypoint command functionality in src.geometry."""
 
 from typing import cast
 

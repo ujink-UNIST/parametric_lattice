@@ -1,4 +1,5 @@
-# lgf_io.py
+#lgf_io.py
+"""Module for lgf io functionality in src.custom_io."""
 
 from __future__ import annotations
 

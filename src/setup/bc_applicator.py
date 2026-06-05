@@ -1,5 +1,4 @@
-﻿# bc_applicator.py
-
+#bc_applicator.py
 """Boundary-condition command builders for beam and solid models."""
 
 from __future__ import annotations

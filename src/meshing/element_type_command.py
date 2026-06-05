@@ -1,4 +1,5 @@
-# element_type_command.py
+#element_type_command.py
+"""Module for element type command functionality in src.meshing."""
 
 from core.apdl_commands import ApdlCommands
 

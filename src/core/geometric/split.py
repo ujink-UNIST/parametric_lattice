@@ -1,4 +1,5 @@
-# split.py
+#split.py
+"""Module for split functionality in src.core.geometric."""
 
 from fractions import Fraction
 from typing import Sequence

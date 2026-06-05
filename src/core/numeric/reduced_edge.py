@@ -1,4 +1,5 @@
-# reduced_edge.py
+#reduced_edge.py
+"""Module for reduced edge functionality in src.core.numeric."""
 
 from __future__ import annotations
 

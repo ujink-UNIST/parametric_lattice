@@ -1,4 +1,5 @@
-# segment.py
+#segment.py
+"""Module for segment functionality in src.core.numeric."""
 
 from __future__ import annotations
 

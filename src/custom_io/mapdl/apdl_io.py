@@ -1,4 +1,5 @@
-# apdl_io.py
+#apdl_io.py
+"""Module for apdl io functionality in src.custom_io.mapdl."""
 
 from __future__ import annotations
 
@@ -64,6 +65,26 @@ def start_mapdl(
     settings: ApdlSettings | None = None,
     **launch_kwargs: Any,
 ) -> Mapdl:
+    """Launch a MAPDL process using project settings.
+
+    Parameters
+    ----------
+    settings : ApdlSettings or None, optional
+        Base launch settings. Defaults are used when ``None``.
+    **launch_kwargs : Any
+        Keyword arguments that override values generated from ``settings``.
+
+    Returns
+    -------
+    Mapdl
+        Running PyMAPDL object.
+
+    Raises
+    ------
+    LaunchError
+        If PyMAPDL cannot start or connect to MAPDL.
+    """
+
     settings = settings or ApdlSettings()
     settings.prepare_directories()
 
@@ -86,6 +107,22 @@ def start_mapdl(
 
 
 def run_commands(mapdl: Mapdl, commands: ApdlCommands) -> None:
+    """Send APDL commands to MAPDL in safe executable blocks.
+
+    Parameters
+    ----------
+    mapdl : Mapdl
+        Active MAPDL connection.
+    commands : ApdlCommands
+        APDL command strings to execute.
+
+    Notes
+    -----
+    The function preserves multi-line APDL constructs such as ``*DO``, ``*IF``,
+    and ``*VWRITE`` by delaying gRPC submission until a complete block has been
+    assembled.
+    """
+
     apdl_script = generate_apdl_script(commands)
     do_count = 0
     if_count = 0
@@ -138,6 +175,19 @@ def run_commands(mapdl: Mapdl, commands: ApdlCommands) -> None:
 
 
 def generate_apdl_script(commands: ApdlCommands) -> str:
+    """Flatten APDL commands into a newline-delimited script.
+
+    Parameters
+    ----------
+    commands : ApdlCommands
+        Command strings to normalize.
+
+    Returns
+    -------
+    str
+        Script text with empty commands removed.
+    """
+
     return "\n".join(cmd.strip() for cmd in commands if cmd.strip())
 
 
@@ -148,13 +198,23 @@ def write_apdl_macro(
     title: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Write an APDL macro/input file containing the given command sequence.
+    """Write an APDL macro file for reproducibility and debugging.
 
-    Intended for reproducibility/debugging (e.g. artifacts/case/<hash>/main.mac).
+    Parameters
+    ----------
+    path : str or Path
+        Destination macro path.
+    commands : ApdlCommands
+        APDL commands to write.
+    title : str or None, optional
+        Optional title stored in the macro comment header.
+    metadata : dict[str, Any] or None, optional
+        Optional key-value metadata stored in the macro comment header.
 
-    Notes:
-      - We write the *flattened* command sequence exactly as we send it to MAPDL.
-      - APDL comments use '!'.
+    Notes
+    -----
+    The command sequence is flattened exactly as it is sent to MAPDL. APDL
+    comments use ``!``.
     """
 
     p = Path(path)
@@ -208,6 +268,14 @@ def _stop_grpc(mapdl: MapdlGrpc) -> None:
 
 
 def stop_mapdl(mapdl: Mapdl) -> None:
+    """Stop MAPDL and clean up the associated process tree when possible.
+
+    Parameters
+    ----------
+    mapdl : Mapdl
+        MAPDL object to close.
+    """
+
     try:
         if isinstance(mapdl, MapdlGrpc):
             _stop_grpc(mapdl)
@@ -225,6 +293,21 @@ def mapdl_session(
     settings: ApdlSettings | None = None,
     **launch_kwargs: Any,
 ):
+    """Context manager that launches and reliably closes MAPDL.
+
+    Parameters
+    ----------
+    settings : ApdlSettings or None, optional
+        Base launch settings.
+    **launch_kwargs : Any
+        Launch overrides passed to :func:`start_mapdl`.
+
+    Yields
+    ------
+    Mapdl
+        Active MAPDL connection.
+    """
+
     mapdl = start_mapdl(settings, **launch_kwargs)
     try:
         yield mapdl

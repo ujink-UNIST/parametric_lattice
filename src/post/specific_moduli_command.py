@@ -1,3 +1,6 @@
+#specific_moduli_command.py
+"""Module for specific moduli command functionality in src.post."""
+
 from __future__ import annotations
 
 """Specific stiffness-like outputs.

@@ -1,3 +1,6 @@
+#boundary_touch_area_command.py
+"""Module for boundary touch area command functionality in src.post."""
+
 from __future__ import annotations
 
 """Boundary touch area output.

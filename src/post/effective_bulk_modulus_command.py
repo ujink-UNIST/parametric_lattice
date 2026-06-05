@@ -1,3 +1,6 @@
+#effective_bulk_modulus_command.py
+"""Module for effective bulk modulus command functionality in src.post."""
+
 from __future__ import annotations
 
 """Effective bulk modulus for sim_type=xyz.

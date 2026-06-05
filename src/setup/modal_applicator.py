@@ -1,5 +1,4 @@
-# modal_applicator.py
-
+#modal_applicator.py
 """Modal-analysis setup command builder."""
 
 from __future__ import annotations

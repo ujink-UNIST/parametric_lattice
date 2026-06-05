@@ -1,4 +1,5 @@
-# socket_io.py
+#socket_io.py
+"""Module for socket io functionality in src.custom_io."""
 
 import random
 import socket

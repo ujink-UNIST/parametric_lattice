@@ -1,3 +1,6 @@
+#sim_case_meta.py
+"""Module for sim case meta functionality in src.post."""
+
 from __future__ import annotations
 
 """Flatten :class:`core.parameters.sim_case.SimCase` into row-wise metadata.

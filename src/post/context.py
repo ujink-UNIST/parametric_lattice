@@ -1,3 +1,4 @@
+#context.py
 """Shared context passed to post output handlers.
 
 This mirrors :mod:`postprocess.context` so the new post/ pipeline can evolve

@@ -1,3 +1,4 @@
+#write_long.py
 """Helpers for writing long-format t_out rows to an Excel table via xlwings."""
 
 from __future__ import annotations

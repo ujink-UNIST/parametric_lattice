@@ -1,5 +1,4 @@
-# __init__.py
-
+#__init__.py
 """Numeric type aliases used across the project.
 
 Prefer importing from here (or :mod:`core.floats.types`) instead of defining new

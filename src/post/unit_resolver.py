@@ -1,3 +1,6 @@
+#unit_resolver.py
+"""Module for unit resolver functionality in src.post."""
+
 from __future__ import annotations
 
 """Resolve unit strings for t_out categories.

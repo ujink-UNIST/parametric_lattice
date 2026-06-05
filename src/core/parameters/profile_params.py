@@ -1,4 +1,5 @@
-# profile_params.py
+#profile_params.py
+"""Module for profile params functionality in src.core.parameters."""
 
 from __future__ import annotations
 

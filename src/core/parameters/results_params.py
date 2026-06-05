@@ -1,4 +1,5 @@
-# results_params.py
+#results_params.py
+"""Module for results params functionality in src.core.parameters."""
 
 from dataclasses import dataclass
 from fractions import Fraction

@@ -1,4 +1,5 @@
-# meshing_params.py
+#meshing_params.py
+"""Module for meshing params functionality in src.core.parameters."""
 
 from dataclasses import dataclass
 from typing import Any, Tuple

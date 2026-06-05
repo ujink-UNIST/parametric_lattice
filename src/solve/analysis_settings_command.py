@@ -1,5 +1,4 @@
-# analysis_settings_command.py
-
+#analysis_settings_command.py
 """APDL command builders for the solution stage."""
 
 from __future__ import annotations

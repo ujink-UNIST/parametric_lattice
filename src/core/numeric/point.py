@@ -1,4 +1,5 @@
-# point.py
+#point.py
+"""Module for point functionality in src.core.numeric."""
 
 from __future__ import annotations
 

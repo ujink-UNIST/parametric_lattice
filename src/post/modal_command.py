@@ -1,3 +1,6 @@
+#modal_command.py
+"""Module for modal command functionality in src.post."""
+
 from __future__ import annotations
 
 """Modal outputs.

@@ -1,5 +1,4 @@
-# lgf_parser.py
-
+#lgf_parser.py
 """Parse LGF text into raw preprocessing data."""
 
 from __future__ import annotations

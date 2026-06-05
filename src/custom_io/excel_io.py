@@ -1,298 +1,53 @@
-# excel_io.py
+#excel_io.py
+"""Module for excel io functionality in src.custom_io."""
 
 import json
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Protocol, TypeVar
+from typing import Any
 
-import numpy as np
 import xlwings as xw  # type: ignore[import-not-found]
 from xlwings.main import Table  # type: ignore[import-not-found]
 
-from core.hashing import sha1_hex
-
-from core.parameters.element_type_params import (
-    ElementTypeParams,
+from core.parameters.sim_case import SimCase
+from custom_io.case_hash import build_case_hash
+from custom_io.mapdl.apdl_io import mapdl_session, run_commands, write_apdl_macro
+from custom_io.mapdl.batch import MapdlBatchRunner
+from custom_io.post.aggregate import write_aggregate_rows
+from custom_io.excel.cases import get_simulation_cases as _get_simulation_cases
+from custom_io.excel.config import apply_path_config_from_book as _apply_path_config_from_book
+from custom_io.excel.status import (
+    set_status_done as _set_status_done,
+    set_status_fail as _set_status_fail,
+    set_status_pending as _set_status_pending,
+    set_status_running as _set_status_running,
+    set_status_skip as _set_status_skip,
+    status_range_for_input_row as _status_range_for_input_row,
 )
-from core.parameters.geometry_params import GeometryParams
-from core.parameters.material_params import MaterialParams
-from core.parameters.meshing_params import MeshingParams
-from core.parameters.profile_params import (
-    build_profile_params,
-)
-from core.parameters.setup_params import SetupParams
-from core.parameters.sim_case import (
-    PostMeshSpec,
-    PreMeshSpec,
-    SimCase,
-)
-from custom_io.apdl_io import mapdl_session, run_commands, write_apdl_macro
-from core.apdl_settings import ApdlSettings
-from custom_io.ui_heartbeat import UIHeartbeat
-from custom_io.excel_read import (
-    read_float,
-    read_int,
-    read_optional_float,
-    read_str,
-    read_Vector3,
-)
-from custom_io.lgf_io import resolve_cell_name
-from custom_io.path_config import (
-    PathConfig,
-    default_config,
-    get_path_config,
-    set_path_config,
-)
+from custom_io.excel.tables import Body, Header, find_table, find_table_and_sheet, get_table_data
+from custom_io.excel.ui_heartbeat import UIHeartbeat
+from custom_io.path_config import get_path_config
 from pipeline import build_pipeline
 from post.output_spec import is_post_output_allowed
 from post.pipeline import post_commands
 
 _INPUT_TABLE = "t_input"
 _OUTPUT_TABLE = "t_out"  # long-format output table (required)
-_CONFIG_TABLE = "t_config"
-
-# UI: lightweight progress indicator column (outside the t_input table)
-# For a running case at table body row i, we write to e.g. A{excel_row}.
-_STATUS_COL = "A"
-_PENDING_MARK = "…"
-_DONE_MARK = "✔"
-_FAIL_MARK = "✘"
-_SKIP_MARK = "➥"
-
-# Status cell styling (RGB)
-_PENDING_COLOR = (235, 235, 235)  # light gray
-_RUNNING_COLOR = (255, 242, 204)  # light yellow
-_DONE_COLOR = (198, 239, 206)  # light green
-_FAIL_COLOR = (255, 199, 206)  # light red
-_SKIP_COLOR = (221, 235, 247)  # light blue
-
-# Status font colors (RGB)
-_PENDING_FONT = (90, 90, 90)  # dark gray
-_RUNNING_FONT = (156, 101, 0)  # dark orange/brown
-_DONE_FONT = (0, 97, 0)  # dark green
-_FAIL_FONT = (156, 0, 6)  # dark red
-_SKIP_FONT = (31, 78, 121)  # dark blue
-
-
-def _doevents(book: xw.Book) -> None:
-    """Let Excel process UI events (best-effort).
-
-    This helps Excel repaint the sheet after .value updates.
-    """
-
-    with suppress(Exception):
-        book.app.api.Run("DoEvents")
-
-
-def _rgb_to_excel_color(rgb: tuple[int, int, int]) -> int:
-    """Convert (R,G,B) to Excel/VBA Color integer (BGR)."""
-
-    r, g, b = (int(rgb[0]), int(rgb[1]), int(rgb[2]))
-    return (b << 16) | (g << 8) | r
-
-
-def _style_status_cell(
-    cell: xw.Range,
-    *,
-    fill_rgb: tuple[int, int, int],
-    font_rgb: tuple[int, int, int] | None = None,
-    bold: bool = False,
-) -> None:
-    with suppress(Exception):
-        cell.color = fill_rgb
-    with suppress(Exception):
-        if font_rgb is not None:
-            cell.api.Font.Color = _rgb_to_excel_color(font_rgb)
-    with suppress(Exception):
-        cell.api.Font.Bold = bool(bold)
-    with suppress(Exception):
-        cell.api.HorizontalAlignment = -4108  # xlCenter
-
-
-def _set_status_pending(book: xw.Book, cell: xw.Range | None) -> None:
-    if cell is None:
-        return
-    cell.value = _PENDING_MARK
-    _style_status_cell(cell, fill_rgb=_PENDING_COLOR, font_rgb=_PENDING_FONT, bold=True)
-    _doevents(book)
-
-
-def _set_status_running(book: xw.Book, cell: xw.Range | None) -> None:
-    if cell is None:
-        return
-    # Mirror the global spinner cell (Input!A1) while this case runs.
-    cell.formula = "=Input!$A$1"
-    _style_status_cell(cell, fill_rgb=_RUNNING_COLOR, font_rgb=_RUNNING_FONT)
-    _doevents(book)
-
-
-def _set_status_done(book: xw.Book, cell: xw.Range | None) -> None:
-    if cell is None:
-        return
-    cell.value = _DONE_MARK
-    _style_status_cell(cell, fill_rgb=_DONE_COLOR, font_rgb=_DONE_FONT)
-    _doevents(book)
-
-
-def _set_status_fail(book: xw.Book, cell: xw.Range | None) -> None:
-    if cell is None:
-        return
-    cell.value = _FAIL_MARK
-    _style_status_cell(cell, fill_rgb=_FAIL_COLOR, font_rgb=_FAIL_FONT)
-    _doevents(book)
-
-
-def _set_status_skip(book: xw.Book, cell: xw.Range | None) -> None:
-    if cell is None:
-        return
-    cell.value = _SKIP_MARK
-    _style_status_cell(cell, fill_rgb=_SKIP_COLOR, font_rgb=_SKIP_FONT)
-    _doevents(book)
-
-
-class DataclassType(Protocol):
-    __dataclass_fields__: dict[str, Any]
-
-
-T = TypeVar("T", bound=DataclassType)
-
-
-class DataclassInstance(Protocol):
-    __dataclass_fields__: dict[str, Any]
-
-
-Header = tuple[str, ...]
-Body = tuple[tuple[Any, ...], ...]
-
-
-def _apply_path_config_from_book(book: xw.Book) -> None:
-    """Apply runtime path config from Excel `t_config` (if present).
-
-    We interpret values *as-is* (no '~' expansion). If a relative path is
-    provided, it is resolved relative to the Excel workbook folder.
-
-    Expected columns in `t_config` (first row is used):
-      - lgf
-      - artifacts
-      - results
-      - compute_policy  (cache|recompute|smart)
-      - n_proc          (optional int, MAPDL -np)
-      - ansys_batch_size (optional int; 1=restart every case, 0=one MAPDL for all)
-
-    Missing table/columns/cells fall back to repo defaults.
-    """
-
-    repo_root = Path(__file__).resolve().parents[2]
-    cfg = default_config(repo_root)
-
-    try:
-        workbook_path = Path(str(book.fullname))
-        relative_base = workbook_path.parent if str(book.fullname).strip() else cfg.repo_root
-    except Exception:
-        relative_base = cfg.repo_root
-
-    try:
-        table = find_table(book, _CONFIG_TABLE)
-    except KeyError:
-        set_path_config(cfg)
-        return
-
-    header, body = get_table_data(table)
-    if not body:
-        set_path_config(cfg)
-        return
-
-    row0 = body[0]
-    col_index = {str(h).strip().lower(): i for i, h in enumerate(header)}
-
-    def read_path(col: str) -> Path | None:
-        i = col_index.get(col)
-        if i is None or i >= len(row0):
-            return None
-        v = row0[i]
-        if v is None:
-            return None
-        s = str(v).strip()
-        if not s:
-            return None
-        p = Path(s)
-        if p.is_absolute():
-            return p
-        return (relative_base / p).resolve()
-
-    lgf_root = read_path("lgf") or cfg.lgf_root
-    artifacts_root = read_path("artifacts") or cfg.artifacts_root
-    results_root = read_path("results") or cfg.results_root
-
-    compute_policy_raw = "smart"
-    i_pol = col_index.get("compute_policy")
-    if i_pol is not None and i_pol < len(row0):
-        v = row0[i_pol]
-        if v is not None and str(v).strip():
-            compute_policy_raw = str(v).strip().lower()
-
-    if compute_policy_raw not in {"cache", "recompute", "smart"}:
-        raise ValueError(
-            f"t_config.compute_policy must be one of cache/recompute/smart (got {compute_policy_raw!r})"
-        )
-
-    nproc: int | None = None
-    i_np = col_index.get("n_proc")
-    if i_np is not None and i_np < len(row0):
-        v = row0[i_np]
-        if v is not None and str(v).strip():
-            try:
-                nproc = int(float(v))
-            except Exception as e:
-                raise ValueError(f"t_config.n_proc must be an int (got {v!r})") from e
-            if nproc <= 0:
-                raise ValueError(f"t_config.n_proc must be positive (got {nproc})")
-
-    ansys_batch_size = int(getattr(cfg, "ansys_batch_size", 1))
-    i_batch = col_index.get("ansys_batch_size")
-    if i_batch is None:
-        # Backward/typing-friendly aliases.
-        i_batch = col_index.get("mapdl_batch_size")
-    if i_batch is None:
-        i_batch = col_index.get("ansys_restart_every")
-    if i_batch is not None and i_batch < len(row0):
-        v = row0[i_batch]
-        if v is not None and str(v).strip():
-            try:
-                ansys_batch_size = int(float(v))
-            except Exception as e:
-                raise ValueError(
-                    f"t_config.ansys_batch_size must be an int (got {v!r})"
-                ) from e
-            if ansys_batch_size < 0:
-                raise ValueError(
-                    f"t_config.ansys_batch_size must be 0 or positive (got {ansys_batch_size})"
-                )
-
-    set_path_config(
-        PathConfig(
-            repo_root=cfg.repo_root,
-            lgf_root=lgf_root,
-            artifacts_root=artifacts_root,
-            results_root=results_root,
-            compute_policy=compute_policy_raw,
-            nproc=nproc,
-            ansys_batch_size=ansys_batch_size,
-        )
-    )
 
 
 def run_selected(
     book: xw.Book,
     selected_indices: tuple[int, ...] | None = None,
 ) -> None:
-    """Run selected simulation cases.
+    """Run selected simulation cases from the Excel input table.
 
-    Args:
-        book: Calling xlwings workbook.
-        selected_indices: 0-based indices into the input table.
-            - None: run all cases
-            - tuple[int, ...]: run only those cases
+    Parameters
+    ----------
+    book : xw.Book
+        Calling xlwings workbook containing ``t_input``.
+    selected_indices : tuple[int, ...] or None, optional
+        Zero-based indices into the input table. If ``None``, all cases are
+        solved.
     """
 
     _apply_path_config_from_book(book)
@@ -334,6 +89,17 @@ def run_selected_postprocess(
     book: xw.Book,
     selected_indices: tuple[int, ...] | None = None,
 ) -> None:
+    """Run postprocessing for selected simulation cases.
+
+    Parameters
+    ----------
+    book : xw.Book
+        Calling xlwings workbook containing ``t_input`` and ``t_out``.
+    selected_indices : tuple[int, ...] or None, optional
+        Zero-based input table row indices to postprocess. If ``None``, all
+        cases are postprocessed.
+    """
+
     _apply_path_config_from_book(book)
 
     input_table: Table = find_table(book, _INPUT_TABLE)
@@ -360,7 +126,13 @@ def run_selected_postprocess(
 
 
 def run_all(book: xw.Book) -> None:
-    """Backwards-compatible helper: run all cases."""
+    """Run all simulation cases in the workbook.
+
+    Parameters
+    ----------
+    book : xw.Book
+        Calling xlwings workbook.
+    """
     run_selected(book, selected_indices=None)
 
 
@@ -368,17 +140,25 @@ def selected_input_indices(
     book: xw.Book,
     table_key: str = _INPUT_TABLE,
 ) -> tuple[int, ...] | None:
-    """Return 0-based visible row indices within the input table body.
+    """Return selected visible row indices within the input table body.
 
-    Selection is accepted only when it intersects the actual `t_input` body on
-    the same worksheet, in both row and column directions. This prevents rows on
-    other sheets, whole-sheet row selections, or filtered/hidden rows from being
-    interpreted as selected simulation cases.
+    Parameters
+    ----------
+    book : xw.Book
+        Workbook whose active Excel selection is inspected.
+    table_key : str, optional
+        Input table name or display name.
 
-    Rules:
-      - If the selection does not intersect the table body, returns None.
-      - If the table has no body (empty), returns None.
-      - Hidden rows (including rows hidden by filters) are ignored.
+    Returns
+    -------
+    tuple[int, ...] or None
+        Sorted zero-based body row indices. ``None`` is returned when the
+        selection does not intersect the table body or the table is empty.
+
+    Notes
+    -----
+    Selection is accepted only when it intersects the actual table body on the
+    same worksheet in both row and column directions. Hidden rows are ignored.
     """
 
     table, table_sheet = find_table_and_sheet(book, table_key)
@@ -445,6 +225,27 @@ def _read_json(path: Path) -> dict[str, Any] | None:
 def _meta_matches(
     path: Path, *, key_field: str, hash_field: str, key: str, h: str
 ) -> bool:
+    """Check whether a metadata file matches the expected key and hash.
+
+    Parameters
+    ----------
+    path : Path
+        JSON metadata file to inspect.
+    key_field : str
+        Field name containing the canonical case key.
+    hash_field : str
+        Field name containing the derived hash.
+    key : str
+        Expected canonical case key.
+    h : str
+        Expected hash value.
+
+    Returns
+    -------
+    bool
+        ``True`` when both metadata fields match the expected values.
+    """
+
     meta = _read_json(path)
     if not isinstance(meta, dict):
         return False
@@ -458,6 +259,25 @@ def _is_case_solved(
     case_key: str,
     case_hash: str,
 ) -> bool:
+    """Return whether a case has complete solve outputs and matching metadata.
+
+    Parameters
+    ----------
+    run_dir : Path
+        Case result directory expected to contain MAPDL database and result files.
+    case_meta_path : Path
+        Metadata JSON path associated with the case.
+    case_key : str
+        Canonical case key used to validate metadata.
+    case_hash : str
+        Expected case hash used to validate metadata.
+
+    Returns
+    -------
+    bool
+        ``True`` if ``case.db``, ``case.rst``, and matching metadata all exist.
+    """
+
     if not (run_dir / "case.db").exists():
         return False
     if not (run_dir / "case.rst").exists():
@@ -478,6 +298,19 @@ def run_cases(
     inputs: tuple[SimCase, ...],
     save_intermediate: bool = False,
 ):
+    """Solve simulation cases through MAPDL and update Excel status cells.
+
+    Parameters
+    ----------
+    book : xw.Book
+        Calling workbook used for UI status updates.
+    inputs : tuple[SimCase, ...]
+        Simulation cases to solve. Aggregate-only cases are skipped here.
+    save_intermediate : bool, optional
+        If ``True``, write reusable geometry and mesh artifacts during solve
+        pipeline generation.
+    """
+
     hb = UIHeartbeat(book)
 
     cfg = get_path_config()
@@ -496,42 +329,6 @@ def run_cases(
     # Use a stable, non-hash jobname so result filenames don't include the case hash.
     jobname = "case"
 
-    active_session = None
-    active_mapdl = None
-    cases_in_session = 0
-    session_index = 0
-
-    def close_active_session() -> None:
-        nonlocal active_session, active_mapdl, cases_in_session
-        if active_session is not None:
-            active_session.__exit__(None, None, None)
-        active_session = None
-        active_mapdl = None
-        cases_in_session = 0
-
-    def ensure_mapdl_session():
-        nonlocal active_session, active_mapdl, cases_in_session, session_index
-        if active_mapdl is not None and (
-            ansys_batch_size == 0 or cases_in_session < ansys_batch_size
-        ):
-            return active_mapdl
-
-        close_active_session()
-        session_index += 1
-        session_dir = session_root / f"batch_{session_index:04d}"
-        session_dir.mkdir(parents=True, exist_ok=True)
-        settings = ApdlSettings(
-            jobname=jobname,
-            run_location=session_dir,
-            cleanup_on_exit=False,
-            nproc=getattr(cfg, "nproc", None),
-        )
-        session = mapdl_session(settings=settings)
-        mapdl = session.__enter__()
-        active_session = session
-        active_mapdl = mapdl
-        return active_mapdl
-
     try:
         # Mark all selected rows as pending up-front.
         for sim_case in inputs:
@@ -541,199 +338,201 @@ def run_cases(
             )
             hb.tick()
 
-        for sim_case in inputs:
-            status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
-            _set_status_running(book, status_cell)
-            hb.tick()
+        with MapdlBatchRunner(
+            session_root=session_root,
+            jobname=jobname,
+            nproc=getattr(cfg, "nproc", None),
+            batch_size=ansys_batch_size,
+        ) as mapdl_runner:
+            for sim_case in inputs:
+                status_cell = _status_range_for_input_row(book, int(sim_case.row_idx))
+                _set_status_running(book, status_cell)
+                hb.tick()
 
-            if _is_aggregate_sim_type(sim_case.post_mesh_spec.setup.sim_type):
-                # Aggregate rows (static=100, total=101) are postprocess-only.
-                # They combine already-computed cases and never run MAPDL solve.
-                _set_status_skip(book, status_cell)
-                continue
+                if _is_aggregate_sim_type(sim_case.post_mesh_spec.setup.sim_type):
+                    # Aggregate rows (static=100, total=101) are postprocess-only.
+                    # They combine already-computed cases and never run MAPDL solve.
+                    _set_status_skip(book, status_cell)
+                    continue
 
-            case_key = sim_case.to_string()
-            case_hash = build_case_hash(case_key)
+                case_key = sim_case.to_string()
+                case_hash = build_case_hash(case_key)
 
-            run_dir = base_run_dir / f"{case_hash}"
-            run_dir.mkdir(parents=True, exist_ok=True)
+                run_dir = base_run_dir / f"{case_hash}"
+                run_dir.mkdir(parents=True, exist_ok=True)
 
-            # Save sim_case metadata alongside results for reproducibility.
-            sim_case_path = case_artifacts_root / case_hash / "sim_case.json"
-            sim_case_path.parent.mkdir(parents=True, exist_ok=True)
-            sim_case_path.write_text(
-                json.dumps(
-                    {
-                        "case_key": case_key,
+                # Save sim_case metadata alongside results for reproducibility.
+                sim_case_path = case_artifacts_root / case_hash / "sim_case.json"
+                sim_case_path.parent.mkdir(parents=True, exist_ok=True)
+                sim_case_path.write_text(
+                    json.dumps(
+                        {
+                            "case_key": case_key,
+                            "case_hash": case_hash,
+                            "sim_case": sim_case,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                        default=lambda o: (o.tolist() if hasattr(o, "tolist") else vars(o)),
+                    ),
+                    encoding="utf-8",
+                )
+
+                print(sim_case.to_string())
+
+                # If smart/cache and this case is already solved, skip.
+                case_meta_path = case_artifacts_root / case_hash / "sim_case.json"
+                compute_policy = str(getattr(cfg, "compute_policy", "smart")).lower()
+
+                if compute_policy in {"smart", "cache"} and _is_case_solved(
+                    run_dir=run_dir,
+                    case_meta_path=case_meta_path,
+                    case_key=case_key,
+                    case_hash=case_hash,
+                ):
+                    _set_status_skip(book, status_cell)
+                    continue
+
+                # Decide whether to reuse geometry/mesh caches.
+                from custom_io.geometry_io import (
+                    geometry_db_dir,
+                    geometry_hash,
+                    geometry_key,
+                    import_geometry_db,
+                )
+                from custom_io.mesh_io import (
+                    export_mesh_cdb,
+                    export_mesh_db,
+                    import_mesh_db,
+                    mesh_db_dir,
+                    mesh_hash,
+                    mesh_key,
+                )
+                from material.pipeline import material_commands
+                from setup.pipeline import setup_commands
+                from solve.pipeline import solver_commands
+                from meshing.pipeline import meshing_commands
+
+                mesh_dir = mesh_db_dir(sim_case)
+                mesh_meta = mesh_dir / "sim_case.json"
+                mesh_db = mesh_dir / "mesh.db"
+                mesh_ok = mesh_db.exists() and _meta_matches(
+                    mesh_meta,
+                    key_field="mesh_key",
+                    hash_field="mesh_hash",
+                    key=mesh_key(sim_case),
+                    h=mesh_hash(sim_case),
+                )
+
+                geom_dir = geometry_db_dir(sim_case)
+                geom_meta = geom_dir / "sim_case.json"
+                geom_db = geom_dir / "geometry.db"
+                geom_ok = geom_db.exists() and _meta_matches(
+                    geom_meta,
+                    key_field="geometry_key",
+                    hash_field="geometry_hash",
+                    key=geometry_key(sim_case),
+                    h=geometry_hash(sim_case),
+                )
+
+                # cache policy: if no reusable caches, skip.
+                if compute_policy == "cache" and not (mesh_ok or geom_ok):
+                    _set_status_skip(book, status_cell)
+                    continue
+
+                # Build the solve pipeline depending on cache availability.
+                if compute_policy in {"smart", "cache"} and mesh_ok:
+                    # Fast path: import mesh DB, then apply material/setup/solve.
+                    # We still compute unit_cell in Python for setup naming.
+                    from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
+                    from custom_io.lgf_io import import_lgf
+
+                    lattice = lgf_to_lattice(
+                        import_lgf(sim_case.pre_mesh_spec.geometry.cell_name)
+                    )
+                    unit_cell = lattice_to_unit_cell(lattice)
+
+                    pipeline = (
+                        ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
+                        + import_mesh_db(sim_case)
+                        # RESUME may reset jobname; /FILNAME must run at BEGIN level.
+                        + ("FINISH", "/FILNAME,case", "/PREP7")
+                        + material_commands(sim_case.post_mesh_spec.material)
+                        + setup_commands(
+                            unit_cell,
+                            sim_case.pre_mesh_spec.profile,
+                            sim_case.pre_mesh_spec.geometry,
+                            sim_case.post_mesh_spec.setup,
+                        )
+                        + solver_commands(sim_case.post_mesh_spec.setup)
+                        + ("SAVE,'case','db'",)
+                    )
+                elif compute_policy in {"smart", "cache"} and geom_ok:
+                    # Mid path: import geometry DB, then mesh + material/setup/solve.
+                    from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
+                    from custom_io.lgf_io import import_lgf
+
+                    lattice = lgf_to_lattice(
+                        import_lgf(sim_case.pre_mesh_spec.geometry.cell_name)
+                    )
+                    unit_cell = lattice_to_unit_cell(lattice)
+
+                    pipeline = (
+                        ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
+                        + import_geometry_db(sim_case)
+                        # RESUME may reset jobname; /FILNAME must run at BEGIN level.
+                        + ("FINISH", "/FILNAME,case", "/PREP7")
+                        + meshing_commands(
+                            unit_cell,
+                            sim_case.pre_mesh_spec.geometry,
+                            sim_case.pre_mesh_spec.profile,
+                            sim_case.pre_mesh_spec.meshing,
+                        )
+                        + (
+                            (export_mesh_db(sim_case) + export_mesh_cdb(sim_case))
+                            if save_intermediate
+                            else ()
+                        )
+                        + material_commands(sim_case.post_mesh_spec.material)
+                        + setup_commands(
+                            unit_cell,
+                            sim_case.pre_mesh_spec.profile,
+                            sim_case.pre_mesh_spec.geometry,
+                            sim_case.post_mesh_spec.setup,
+                        )
+                        + solver_commands(sim_case.post_mesh_spec.setup)
+                        + ("SAVE,'case','db'",)
+                    )
+                else:
+                    pipeline = build_pipeline(sim_case, save_intermediate=save_intermediate)
+
+                # Ensure jobname is set after /CLEAR inside the pipeline.
+                pipeline = pipeline[:1] + ("/FILNAME,case",) + pipeline[1:]
+
+                cwd_cmds = (f"/CWD,'{run_dir.as_posix()}'",)
+
+                # Save full solve command stream for reproducibility.
+                macro_path = case_artifacts_root / case_hash / "main.mac"
+                write_apdl_macro(
+                    macro_path,
+                    cwd_cmds + pipeline,
+                    title="solve",
+                    metadata={
                         "case_hash": case_hash,
-                        "sim_case": sim_case,
+                        "jobname": jobname,
                     },
-                    ensure_ascii=False,
-                    indent=2,
-                    default=lambda o: (o.tolist() if hasattr(o, "tolist") else vars(o)),
-                ),
-                encoding="utf-8",
-            )
-
-            print(sim_case.to_string())
-
-            # If smart/cache and this case is already solved, skip.
-            case_meta_path = case_artifacts_root / case_hash / "sim_case.json"
-            compute_policy = str(getattr(cfg, "compute_policy", "smart")).lower()
-
-            if compute_policy in {"smart", "cache"} and _is_case_solved(
-                run_dir=run_dir,
-                case_meta_path=case_meta_path,
-                case_key=case_key,
-                case_hash=case_hash,
-            ):
-                _set_status_skip(book, status_cell)
-                continue
-
-            # Decide whether to reuse geometry/mesh caches.
-            from custom_io.geometry_io import (
-                geometry_db_dir,
-                geometry_hash,
-                geometry_key,
-                import_geometry_db,
-            )
-            from custom_io.mesh_io import (
-                export_mesh_cdb,
-                export_mesh_db,
-                import_mesh_db,
-                mesh_db_dir,
-                mesh_hash,
-                mesh_key,
-            )
-            from material.pipeline import material_commands
-            from setup.pipeline import setup_commands
-            from solve.pipeline import solver_commands
-            from meshing.pipeline import meshing_commands
-
-            mesh_dir = mesh_db_dir(sim_case)
-            mesh_meta = mesh_dir / "sim_case.json"
-            mesh_db = mesh_dir / "mesh.db"
-            mesh_ok = mesh_db.exists() and _meta_matches(
-                mesh_meta,
-                key_field="mesh_key",
-                hash_field="mesh_hash",
-                key=mesh_key(sim_case),
-                h=mesh_hash(sim_case),
-            )
-
-            geom_dir = geometry_db_dir(sim_case)
-            geom_meta = geom_dir / "sim_case.json"
-            geom_db = geom_dir / "geometry.db"
-            geom_ok = geom_db.exists() and _meta_matches(
-                geom_meta,
-                key_field="geometry_key",
-                hash_field="geometry_hash",
-                key=geometry_key(sim_case),
-                h=geometry_hash(sim_case),
-            )
-
-            # cache policy: if no reusable caches, skip.
-            if compute_policy == "cache" and not (mesh_ok or geom_ok):
-                _set_status_skip(book, status_cell)
-                continue
-
-            # Build the solve pipeline depending on cache availability.
-            if compute_policy in {"smart", "cache"} and mesh_ok:
-                # Fast path: import mesh DB, then apply material/setup/solve.
-                # We still compute unit_cell in Python for setup naming.
-                from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
-                from custom_io.lgf_io import import_lgf
-
-                lattice = lgf_to_lattice(
-                    import_lgf(sim_case.pre_mesh_spec.geometry.cell_name)
                 )
-                unit_cell = lattice_to_unit_cell(lattice)
 
-                pipeline = (
-                    ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
-                    + import_mesh_db(sim_case)
-                    # RESUME may reset jobname; /FILNAME must run at BEGIN level.
-                    + ("FINISH", "/FILNAME,case", "/PREP7")
-                    + material_commands(sim_case.post_mesh_spec.material)
-                    + setup_commands(
-                        unit_cell,
-                        sim_case.pre_mesh_spec.profile,
-                        sim_case.pre_mesh_spec.geometry,
-                        sim_case.post_mesh_spec.setup,
-                    )
-                    + solver_commands(sim_case.post_mesh_spec.setup)
-                    + ("SAVE,'case','db'",)
-                )
-            elif compute_policy in {"smart", "cache"} and geom_ok:
-                # Mid path: import geometry DB, then mesh + material/setup/solve.
-                from preprocess.pipeline import lattice_to_unit_cell, lgf_to_lattice
-                from custom_io.lgf_io import import_lgf
+                try:
+                    mapdl_runner.run_case(cwd_cmds + pipeline)
+                except Exception:
+                    _set_status_fail(book, status_cell)
+                    raise
 
-                lattice = lgf_to_lattice(
-                    import_lgf(sim_case.pre_mesh_spec.geometry.cell_name)
-                )
-                unit_cell = lattice_to_unit_cell(lattice)
-
-                pipeline = (
-                    ("/CLEAR,START", "/UNITS,MPA", "/PREP7")
-                    + import_geometry_db(sim_case)
-                    # RESUME may reset jobname; /FILNAME must run at BEGIN level.
-                    + ("FINISH", "/FILNAME,case", "/PREP7")
-                    + meshing_commands(
-                        unit_cell,
-                        sim_case.pre_mesh_spec.geometry,
-                        sim_case.pre_mesh_spec.profile,
-                        sim_case.pre_mesh_spec.meshing,
-                    )
-                    + (
-                        (export_mesh_db(sim_case) + export_mesh_cdb(sim_case))
-                        if save_intermediate
-                        else ()
-                    )
-                    + material_commands(sim_case.post_mesh_spec.material)
-                    + setup_commands(
-                        unit_cell,
-                        sim_case.pre_mesh_spec.profile,
-                        sim_case.pre_mesh_spec.geometry,
-                        sim_case.post_mesh_spec.setup,
-                    )
-                    + solver_commands(sim_case.post_mesh_spec.setup)
-                    + ("SAVE,'case','db'",)
-                )
-            else:
-                pipeline = build_pipeline(sim_case, save_intermediate=save_intermediate)
-
-            # Ensure jobname is set after /CLEAR inside the pipeline.
-            pipeline = pipeline[:1] + ("/FILNAME,case",) + pipeline[1:]
-
-            cwd_cmds = (f"/CWD,'{run_dir.as_posix()}'",)
-
-            # Save full solve command stream for reproducibility.
-            macro_path = case_artifacts_root / case_hash / "main.mac"
-            write_apdl_macro(
-                macro_path,
-                cwd_cmds + pipeline,
-                title="solve",
-                metadata={
-                    "case_hash": case_hash,
-                    "jobname": jobname,
-                },
-            )
-
-            try:
-                mapdl = ensure_mapdl_session()
-                run_commands(mapdl, cwd_cmds + pipeline)
-                cases_in_session += 1
-            except Exception:
-                _set_status_fail(book, status_cell)
-                raise
-
-            _set_status_done(book, status_cell)
+                _set_status_done(book, status_cell)
     except Exception as e:
         print(f"Error: {e}")
         raise
-    finally:
-        close_active_session()
 
 
 def run_postprocess(
@@ -743,19 +542,31 @@ def run_postprocess(
     *,
     source_inputs: tuple[SimCase, ...] | None = None,
 ) -> None:
-    hb = UIHeartbeat(book)
+    """Run MAPDL postprocessing and write long-format rows to ``t_out``.
 
-    """Run postprocessing for the given cases (long-format t_out).
+    Parameters
+    ----------
+    book : xw.Book
+        Calling workbook used for table writes and status updates.
+    inputs : tuple[SimCase, ...]
+        Cases to postprocess. Static/total aggregate rows are handled without
+        launching additional MAPDL commands.
+    output_header : Header
+        Existing output table header. Kept for backward-compatible call sites.
+    source_inputs : tuple[SimCase, ...] or None, optional
+        Full source case list used when aggregate rows need to find component
+        load cases outside the selected subset.
 
-    Output table is expected to be named `t_out`.
+    Notes
+    -----
+    Output table is expected to be named ``t_out``.
 
-    Extraction produces a flat list of :class:`post.row.TOutRow` and writes them
-    into the output table with columns:
-      hash, category, row, col, value, unit
-
-    NOTE: `output_header` is accepted for backward compatibility with call sites
-    but is not used.
+    Extraction produces a flat list of ``post.row.TOutRow`` and writes them
+    into the output table with columns ``hash``, ``category``, ``row``,
+    ``col``, ``value``, and ``unit``.
     """
+
+    hb = UIHeartbeat(book)
 
     _ = output_header
 
@@ -828,221 +639,13 @@ def run_postprocess(
     expanded = expand_prefixes(requested_needed.keys(), OUTPUT_DEPENDENCIES)
     needed: dict[str, int] = {p: 1 for p in expanded}
 
-    from custom_io.excel_write_long import upsert_long_rows
-    from post.boundary_force_command import extract_boundary_force_rows
-    from post.boundary_moment_command import extract_boundary_moment_rows
-    from post.boundary_traction_command import extract_boundary_traction_rows
-    from post.boundary_stress_command import extract_boundary_stress_rows
-    from post.boundary_modulus_command import extract_boundary_modulus_rows
-    from post.boundary_touch_area_command import extract_boundary_touch_area_rows
-    from post.boundary_touch_area_ratio_command import extract_boundary_touch_area_ratio_rows
-    from post.boundary_modulus_ratio_command import extract_boundary_modulus_ratio_rows
-    from post.contact_command import (
-        extract_contact_stress_rows,
-        extract_contact_traction_rows,
-    )
-    from post.volume_command import extract_volume_rows
-    from post.effective_moduli_command import (
-        extract_effective_shear_modulus_rows,
-        extract_effective_youngs_modulus_rows,
-    )
-    from post.effective_bulk_modulus_command import extract_effective_bulk_modulus_rows
-    from post.mass_command import extract_mass_rows
-    from post.volume_fraction_command import extract_volume_fraction_rows
-    from post.specific_moduli_command import (
-        extract_specific_shear_modulus_rows,
-        extract_specific_youngs_modulus_rows,
-    )
-    from post.effective_moduli_ratio_command import (
-        extract_effective_shear_modulus_ratio_rows,
-        extract_effective_youngs_modulus_ratio_rows,
-    )
-    from post.volume_metrics_command import (
-        extract_element_count_rows,
-        extract_reference_strain_density_rows,
-        extract_volume_mean_normalized_strain_density_rows,
-        extract_volume_mean_strain_density_rows,
-        extract_volume_median_normalized_strain_density_rows,
-        extract_volume_median_strain_density_rows,
-        extract_volume_avg_stress_rows,
-        extract_volume_cv_normalized_strain_density_rows,
-        extract_volume_cv_strain_density_rows,
-        extract_volume_energy_rows,
-        extract_volume_kurtosis_normalized_strain_density_rows,
-        extract_volume_max_normalized_strain_density_rows,
-        extract_volume_max_strain_density_rows,
-        extract_volume_min_normalized_strain_density_rows,
-        extract_volume_min_strain_density_rows,
-        extract_volume_p95_normalized_strain_density_rows,
-        extract_volume_p95_strain_density_rows,
-        extract_volume_p99_normalized_strain_density_rows,
-        extract_volume_p99_strain_density_rows,
-        extract_volume_range_normalized_strain_density_rows,
-        extract_volume_range_strain_density_rows,
-        extract_volume_skewness_normalized_strain_density_rows,
-        extract_volume_skewness_strain_density_rows,
-        extract_volume_stress_rows,
-        extract_volume_std_normalized_strain_density_rows,
-        extract_volume_std_strain_density_rows,
-        extract_volume_kurtosis_strain_density_rows,
-    )
-    from post.modal_command import (
-        extract_effective_modal_mass_rows,
-        extract_participation_factor_rows,
-        extract_resonant_frequency_rows,
-    )
+    from custom_io.excel.write_long import upsert_long_rows
+    from custom_io.post.extract import extract_post_rows
     from post.context import PostprocessContext
     from post.row import T_OUT_COLUMNS
 
     output_table: Table = find_table(book, _OUTPUT_TABLE)
-
-    # Aggregate rows:
-    #   sim_type=100 (or "static") combines xx, yy, zz, xy, yz, xz.
-    #   sim_type=101 (or "total") combines static + modal + modal_ff.
-    # Aggregates do not run MAPDL; they copy rows from required per-case caches
-    # under the aggregate row's own hash. Missing source cases/caches are errors.
-    source_by_group_and_type: dict[tuple[str, str], SimCase] = {}
-    for src_case in (source_inputs if source_inputs is not None else inputs):
-        src_type = _canonical_sim_type(src_case.post_mesh_spec.setup.sim_type)
-        if _is_aggregate_sim_type(src_type):
-            continue
-        source_by_group_and_type[(src_case.to_string_without_sim_type(), src_type)] = src_case
-
-    def _write_aggregate_rows(aggregate_case: SimCase) -> None:
-        aggregate_type = _canonical_sim_type(aggregate_case.post_mesh_spec.setup.sim_type)
-        if aggregate_type == "100":
-            required_types = ("xx", "yy", "zz", "xy", "yz", "xz")
-        elif aggregate_type == "101":
-            required_types = ("xx", "yy", "zz", "xy", "yz", "xz", "modal", "modal_ff")
-        else:
-            raise ValueError(f"Not an aggregate sim_type: {aggregate_case.post_mesh_spec.setup.sim_type!r}")
-
-        group_key = aggregate_case.to_string_without_sim_type()
-        aggregate_hash = build_case_hash(aggregate_case.to_string())
-
-        from post.post_cache import (
-            PostCache,
-            cache_path_for_case,
-            load_post_cache,
-            make_key,
-            parse_key,
-            save_post_cache,
-        )
-        from post.sim_case_meta import sim_case_meta
-        from post.unit_resolver import unit_for_category
-
-        out_rows: list[dict[str, Any]] = []
-        aggregate_cache = PostCache(
-            case_hash=aggregate_hash,
-            sim_case_meta=sim_case_meta(aggregate_case),
-            rows={},
-        )
-        missing: list[str] = []
-        static_tensor_values: dict[tuple[int, int], float] = {}
-
-        for required_type in required_types:
-            src_case = source_by_group_and_type.get((group_key, required_type))
-            if src_case is None:
-                missing.append(required_type)
-                continue
-
-            src_hash = build_case_hash(src_case.to_string())
-            cache_path = cache_path_for_case(
-                artifacts_case_dir=case_artifacts_root,
-                case_hash=src_hash,
-            )
-            cache = load_post_cache(cache_path, case_hash=src_hash)
-            if not cache.rows:
-                missing.append(f"{required_type}:post_cache")
-                continue
-
-            for k, v in cache.rows.items():
-                try:
-                    cat, r_i, c_i = parse_key(k)
-                except Exception:
-                    continue
-
-                aggregate_cache.rows[make_key(str(cat), int(r_i), int(c_i))] = float(v)
-
-                if str(cat) == "modulus.boundary.value":
-                    static_tensor_values[(int(r_i), int(c_i))] = float(v)
-
-                out_rows.append(
-                    {
-                        "hash": aggregate_hash,
-                        "category": str(cat),
-                        "row": int(r_i),
-                        "col": int(c_i),
-                        "value": float(v),
-                        "unit": unit_for_category(str(cat)),
-                    }
-                )
-
-        # Equivalent elastic stiffness/compliance tensors for static/total aggregates.
-        # Stiffness is assembled from the six static load-case boundary modulus rows:
-        #   stiffness.elastic.tensor[row,col] = stress_component / applied_strain (MPa)
-        #   row/col order = 1..6 in [xx, yy, zz, yz, xz, xy]
-        # Stiffness is cache-only; compliance is cache + Excel t_out.
-        stiffness = np.empty((6, 6), dtype=float)
-        for r_i in range(1, 7):
-            for c_i in range(1, 7):
-                v = static_tensor_values.get((r_i, c_i))
-                if v is None:
-                    missing.append(f"stiffness.elastic.tensor[{r_i},{c_i}]")
-                    stiffness[r_i - 1, c_i - 1] = np.nan
-                    continue
-                stiffness[r_i - 1, c_i - 1] = float(v)
-                aggregate_cache.rows[make_key("stiffness.elastic.tensor", r_i, c_i)] = float(v)
-
-        if not missing:
-            try:
-                compliance = np.linalg.inv(stiffness)
-            except np.linalg.LinAlgError as e:
-                label = "static=100" if aggregate_type == "100" else "total=101"
-                raise RuntimeError(
-                    f"Cannot build compliance.elastic.tensor for {label} aggregate "
-                    f"hash={aggregate_hash}: stiffness tensor is singular"
-                ) from e
-
-            if not np.all(np.isfinite(compliance)):
-                label = "static=100" if aggregate_type == "100" else "total=101"
-                raise RuntimeError(
-                    f"Cannot build compliance.elastic.tensor for {label} aggregate "
-                    f"hash={aggregate_hash}: non-finite inverse values"
-                )
-
-            for r_i in range(1, 7):
-                for c_i in range(1, 7):
-                    v = float(compliance[r_i - 1, c_i - 1])
-                    aggregate_cache.rows[make_key("compliance.elastic.tensor", r_i, c_i)] = v
-                    out_rows.append(
-                        {
-                            "hash": aggregate_hash,
-                            "category": "compliance.elastic.tensor",
-                            "row": r_i,
-                            "col": c_i,
-                            "value": v,
-                            "unit": unit_for_category("compliance.elastic.tensor"),
-                        }
-                    )
-
-        if missing:
-            label = "static=100" if aggregate_type == "100" else "total=101"
-            raise RuntimeError(
-                f"Cannot build {label} aggregate for hash={aggregate_hash}: "
-                f"missing required case/cache(s): {', '.join(missing)}"
-            )
-
-        save_post_cache(
-            cache_path_for_case(artifacts_case_dir=case_artifacts_root, case_hash=aggregate_hash),
-            aggregate_cache,
-        )
-
-        upsert_long_rows(
-            table=output_table,
-            rows=out_rows,
-            required_columns=T_OUT_COLUMNS,
-        )
+    aggregate_source_cases = source_inputs if source_inputs is not None else inputs
 
     # We upsert to t_out incrementally per case for better UI responsiveness.
 
@@ -1071,7 +674,12 @@ def run_postprocess(
 
                 if _is_aggregate_sim_type(sim_case.post_mesh_spec.setup.sim_type):
                     try:
-                        _write_aggregate_rows(sim_case)
+                        write_aggregate_rows(
+                            aggregate_case=sim_case,
+                            source_cases=tuple(aggregate_source_cases),
+                            case_artifacts_root=case_artifacts_root,
+                            output_table=output_table,
+                        )
                     except Exception:
                         _set_status_fail(book, status_cell)
                         hb.tick(force=True)
@@ -1183,349 +791,16 @@ def run_postprocess(
                 meta = sim_case_meta(sim_case)
                 cache.sim_case_meta = meta
 
-                case_rows: list[dict[str, Any]] = []
-
-                def _add_rows(rs):
-                    for r in rs:
-                        d = r.as_dict()
-                        d.update(meta)
-                        case_rows.append(d)
-
-                def _cache_rows(rs):
-                    for r in rs:
-                        cache.upsert(
-                            category=str(r.category),
-                            row=int(r.row),
-                            col=int(r.col),
-                            value=float(r.value),
-                        )
-
-                # Extract & cache anything we actually computed this run.
-                # Write to Excel only if the prefix was explicitly requested.
-
-                if "force.boundary.value" in allowed_needed and "force.boundary.value" in compute_needed:
-                    rows = extract_boundary_force_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="N")
-                    _cache_rows(rows)
-                    if "force.boundary.value" in allowed_requested:
-                        _add_rows(rows)
-
-                if "moment.boundary.value" in allowed_needed and "moment.boundary.value" in compute_needed:
-                    rows = extract_boundary_moment_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="N*mm")
-                    _cache_rows(rows)
-                    if "moment.boundary.value" in allowed_requested:
-                        _add_rows(rows)
-
-                if "traction.boundary.value" in allowed_needed and "traction.boundary.value" in compute_needed:
-                    rows = extract_boundary_traction_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
-                    _cache_rows(rows)
-                    if "traction.boundary.value" in allowed_requested:
-                        _add_rows(rows)
-
-                if "stress.boundary.value" in allowed_needed and "stress.boundary.value" in compute_needed:
-                    rows = extract_boundary_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
-                    _cache_rows(rows)
-                    if "stress.boundary.value" in allowed_requested:
-                        _add_rows(rows)
-
-                if "modulus.boundary.value" in allowed_needed and "modulus.boundary.value" in compute_needed:
-                    rows = extract_boundary_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
-                    _cache_rows(rows)
-                    if "modulus.boundary.value" in allowed_requested:
-                        _add_rows(rows)
-
-                if "modulus.boundary.ratio" in allowed_needed and "modulus.boundary.ratio" in compute_needed:
-                    rows = extract_boundary_modulus_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "modulus.boundary.ratio" in allowed_requested:
-                        _add_rows(rows)
-
-                if "modulus.effective.youngs" in allowed_needed and "modulus.effective.youngs" in compute_needed:
-                    rows = extract_effective_youngs_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
-                    _cache_rows(rows)
-                    if "modulus.effective.youngs" in allowed_requested:
-                        _add_rows(rows)
-
-                if "modulus.effective.shear" in allowed_needed and "modulus.effective.shear" in compute_needed:
-                    rows = extract_effective_shear_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
-                    _cache_rows(rows)
-                    if "modulus.effective.shear" in allowed_requested:
-                        _add_rows(rows)
-
-                if "modulus.effective.bulk" in allowed_needed and "modulus.effective.bulk" in compute_needed:
-                    rows = extract_effective_bulk_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
-                    _cache_rows(rows)
-                    if "modulus.effective.bulk" in allowed_requested:
-                        _add_rows(rows)
-
-                if "modulus.effective.youngs.ratio" in allowed_needed and "modulus.effective.youngs.ratio" in compute_needed:
-                    rows = extract_effective_youngs_modulus_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "modulus.effective.youngs.ratio" in allowed_requested:
-                        _add_rows(rows)
-
-                if "modulus.effective.shear.ratio" in allowed_needed and "modulus.effective.shear.ratio" in compute_needed:
-                    rows = extract_effective_shear_modulus_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "modulus.effective.shear.ratio" in allowed_requested:
-                        _add_rows(rows)
-
-                if "modulus.effective.youngs.specific" in allowed_needed and "modulus.effective.youngs.specific" in compute_needed:
-                    rows = extract_specific_youngs_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^2/s^2")
-                    _cache_rows(rows)
-                    if "modulus.effective.youngs.specific" in allowed_requested:
-                        _add_rows(rows)
-
-                if "modulus.effective.shear.specific" in allowed_needed and "modulus.effective.shear.specific" in compute_needed:
-                    rows = extract_specific_shear_modulus_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^2/s^2")
-                    _cache_rows(rows)
-                    if "modulus.effective.shear.specific" in allowed_requested:
-                        _add_rows(rows)
-
-                if "area.boundary_contact.value" in allowed_needed and "area.boundary_contact.value" in compute_needed:
-                    rows = extract_boundary_touch_area_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^2")
-                    _cache_rows(rows)
-                    if "area.boundary_contact.value" in allowed_requested:
-                        _add_rows(rows)
-
-                if "area.boundary_contact.ratio" in allowed_needed and "area.boundary_contact.ratio" in compute_needed:
-                    rows = extract_boundary_touch_area_ratio_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "area.boundary_contact.ratio" in allowed_requested:
-                        _add_rows(rows)
-
-                if "traction.contact.value" in allowed_needed and "traction.contact.value" in compute_needed:
-                    rows = extract_contact_traction_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
-                    _cache_rows(rows)
-                    if "traction.contact.value" in allowed_requested:
-                        _add_rows(rows)
-
-                if "stress.contact.value" in allowed_needed and "stress.contact.value" in compute_needed:
-                    rows = extract_contact_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
-                    _cache_rows(rows)
-                    if "stress.contact.value" in allowed_requested:
-                        _add_rows(rows)
-
-                if "volume.solid.value" in allowed_needed and "volume.solid.value" in compute_needed:
-                    rows = extract_volume_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mm^3")
-                    _cache_rows(rows)
-                    if "volume.solid.value" in allowed_requested:
-                        _add_rows(rows)
-
-                if "mass.solid.value" in allowed_needed and "mass.solid.value" in compute_needed:
-                    rows = extract_mass_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="kg")
-                    _cache_rows(rows)
-                    if "mass.solid.value" in allowed_requested:
-                        _add_rows(rows)
-
-                if "volume_fraction.cell.value" in allowed_needed and "volume_fraction.cell.value" in compute_needed:
-                    rows = extract_volume_fraction_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "volume_fraction.cell.value" in allowed_requested:
-                        _add_rows(rows)
-
-                if "stress.volume.sum" in allowed_needed and "stress.volume.sum" in compute_needed:
-                    rows = extract_volume_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa*mm^3")
-                    _cache_rows(rows)
-                    if "stress.volume.sum" in allowed_requested:
-                        _add_rows(rows)
-
-                if "stress.volume.avg" in allowed_needed and "stress.volume.avg" in compute_needed:
-                    rows = extract_volume_avg_stress_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="MPa")
-                    _cache_rows(rows)
-                    if "stress.volume.avg" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain.total" in allowed_needed and "energy.strain.total" in compute_needed:
-                    rows = extract_volume_energy_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ")
-                    _cache_rows(rows)
-                    if "energy.strain.total" in allowed_requested:
-                        _add_rows(rows)
-
-                if "element.count" in allowed_needed and "element.count" in compute_needed:
-                    rows = extract_element_count_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "element.count" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.reference" in allowed_needed and "energy.strain_density.reference" in compute_needed:
-                    rows = extract_reference_strain_density_rows(ctx=ctx, case_hash=case_hash, unit="mJ/mm^3")
-                    _cache_rows(rows)
-                    if "energy.strain_density.reference" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.mean" in allowed_needed and "energy.strain_density.mean" in compute_needed:
-                    rows = extract_volume_mean_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
-                    _cache_rows(rows)
-                    if "energy.strain_density.mean" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.std" in allowed_needed and "energy.strain_density.std" in compute_needed:
-                    rows = extract_volume_std_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
-                    _cache_rows(rows)
-                    if "energy.strain_density.std" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.median" in allowed_needed and "energy.strain_density.median" in compute_needed:
-                    rows = extract_volume_median_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
-                    _cache_rows(rows)
-                    if "energy.strain_density.median" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.min" in allowed_needed and "energy.strain_density.min" in compute_needed:
-                    rows = extract_volume_min_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
-                    _cache_rows(rows)
-                    if "energy.strain_density.min" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.max" in allowed_needed and "energy.strain_density.max" in compute_needed:
-                    rows = extract_volume_max_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
-                    _cache_rows(rows)
-                    if "energy.strain_density.max" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.range" in allowed_needed and "energy.strain_density.range" in compute_needed:
-                    rows = extract_volume_range_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
-                    _cache_rows(rows)
-                    if "energy.strain_density.range" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.p95" in allowed_needed and "energy.strain_density.p95" in compute_needed:
-                    rows = extract_volume_p95_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
-                    _cache_rows(rows)
-                    if "energy.strain_density.p95" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.p99" in allowed_needed and "energy.strain_density.p99" in compute_needed:
-                    rows = extract_volume_p99_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="mJ/mm^3")
-                    _cache_rows(rows)
-                    if "energy.strain_density.p99" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.cv" in allowed_needed and "energy.strain_density.cv" in compute_needed:
-                    rows = extract_volume_cv_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.cv" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.skewness" in allowed_needed and "energy.strain_density.skewness" in compute_needed:
-                    rows = extract_volume_skewness_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.skewness" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.kurtosis" in allowed_needed and "energy.strain_density.kurtosis" in compute_needed:
-                    rows = extract_volume_kurtosis_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.kurtosis" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.normalized.mean" in allowed_needed and "energy.strain_density.normalized.mean" in compute_needed:
-                    rows = extract_volume_mean_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.normalized.mean" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.normalized.std" in allowed_needed and "energy.strain_density.normalized.std" in compute_needed:
-                    rows = extract_volume_std_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.normalized.std" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.normalized.median" in allowed_needed and "energy.strain_density.normalized.median" in compute_needed:
-                    rows = extract_volume_median_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.normalized.median" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.normalized.min" in allowed_needed and "energy.strain_density.normalized.min" in compute_needed:
-                    rows = extract_volume_min_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.normalized.min" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.normalized.max" in allowed_needed and "energy.strain_density.normalized.max" in compute_needed:
-                    rows = extract_volume_max_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.normalized.max" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.normalized.range" in allowed_needed and "energy.strain_density.normalized.range" in compute_needed:
-                    rows = extract_volume_range_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.normalized.range" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.normalized.p95" in allowed_needed and "energy.strain_density.normalized.p95" in compute_needed:
-                    rows = extract_volume_p95_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.normalized.p95" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.normalized.p99" in allowed_needed and "energy.strain_density.normalized.p99" in compute_needed:
-                    rows = extract_volume_p99_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.normalized.p99" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.normalized.cv" in allowed_needed and "energy.strain_density.normalized.cv" in compute_needed:
-                    rows = extract_volume_cv_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.normalized.cv" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.normalized.skewness" in allowed_needed and "energy.strain_density.normalized.skewness" in compute_needed:
-                    rows = extract_volume_skewness_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.normalized.skewness" in allowed_requested:
-                        _add_rows(rows)
-
-                if "energy.strain_density.normalized.kurtosis" in allowed_needed and "energy.strain_density.normalized.kurtosis" in compute_needed:
-                    rows = extract_volume_kurtosis_normalized_strain_density_rows(ctx=ctx, mapdl=mapdl, case_hash=case_hash, unit="-")
-                    _cache_rows(rows)
-                    if "energy.strain_density.normalized.kurtosis" in allowed_requested:
-                        _add_rows(rows)
-
-                # Modal outputs (mode 1..10)
-                for i in range(1, 11):
-                    key = f"res_freq_{i}"
-                    if key in allowed_needed and key in compute_needed:
-                        rows = extract_resonant_frequency_rows(
-                            ctx=ctx,
-                            mapdl=mapdl,
-                            case_hash=case_hash,
-                            mode_index=i,
-                            unit="Hz",
-                        )
-                        _cache_rows(rows)
-                        if key in allowed_requested:
-                            _add_rows(rows)
-
-                    key = f"part_factor_{i}"
-                    if key in allowed_needed and key in compute_needed:
-                        rows = extract_participation_factor_rows(
-                            ctx=ctx,
-                            mapdl=mapdl,
-                            case_hash=case_hash,
-                            mode_index=i,
-                            unit="-",
-                        )
-                        _cache_rows(rows)
-                        if key in allowed_requested:
-                            _add_rows(rows)
-
-                    key = f"eff_modal_mass_{i}"
-                    if key in allowed_needed and key in compute_needed:
-                        rows = extract_effective_modal_mass_rows(
-                            ctx=ctx,
-                            mapdl=mapdl,
-                            case_hash=case_hash,
-                            mode_index=i,
-                            unit="kg",
-                        )
-                        _cache_rows(rows)
-                        if key in allowed_requested:
-                            _add_rows(rows)
-
+                extract_post_rows(
+                    ctx=ctx,
+                    mapdl=mapdl,
+                    cache=cache,
+                    meta=meta,
+                    case_hash=case_hash,
+                    allowed_needed=allowed_needed,
+                    compute_needed=compute_needed,
+                    allowed_requested=allowed_requested,
+                )
                 # Persist cache for this case (including intermediates).
                 save_post_cache(cache_path, cache)
 
@@ -1562,10 +837,6 @@ def run_postprocess(
     except Exception as e:
         print(f"Error: {e}")
         raise
-
-
-def build_case_hash(key: str) -> str:
-    return sha1_hex(key)
 
 
 def _canonical_sim_type(sim_type: object) -> str:
@@ -1622,6 +893,21 @@ def _write_hashes_to_input_table(
     selected_indices: tuple[int, ...] | None,
     column_name: str = "hash",
 ) -> None:
+    """Write case hashes back to the Excel input table.
+
+    Parameters
+    ----------
+    input_table : Table
+        Excel ``t_input`` table to update.
+    hashes : list[str]
+        Hash value for each body row in the input table.
+    selected_indices : tuple[int, ...] or None
+        Rows to update. If ``None``, all rows are updated.
+    column_name : str, optional
+        Name of the column that stores hashes. The column is created if it is
+        missing.
+    """
+
     # Ensure the column exists (may add a new column).
     col_idx = _ensure_table_column(input_table, column_name)
 
@@ -1656,196 +942,3 @@ def _ensure_table_rows(table: Table, n_rows: int) -> None:
     # Add missing rows.
     while list_rows.Count < n_rows:
         list_rows.Add()
-
-
-def find_table(
-    book: xw.Book,
-    key: str,
-) -> Table:
-    table, _sheet = find_table_and_sheet(book, key)
-    return table
-
-
-def find_table_and_sheet(
-    book: xw.Book,
-    key: str,
-) -> tuple[Table, xw.Sheet]:
-    for sheet in book.sheets:
-        for table in sheet.tables:
-            if table.name == key or table.display_name == key:
-                return table, sheet
-
-    raise KeyError(f"Could not find Excel table {key!r}")
-
-
-def _status_range_for_input_row(book: xw.Book, row_idx: int) -> xw.Range | None:
-    """Return the status cell range for a given t_input body row.
-
-    We write to a fixed column (default: X) on the same sheet that contains
-    `t_input`, at the Excel row corresponding to `row_idx` in the table body.
-    """
-
-    try:
-        t, sheet = find_table_and_sheet(book, _INPUT_TABLE)
-    except KeyError:
-        return None
-
-    body = t.data_body_range
-    if body is None:
-        return None
-
-    excel_row = int(body.row) + int(row_idx)
-    addr = f"{_STATUS_COL}{excel_row}"
-
-    try:
-        return sheet.range(addr)
-    except Exception:
-        return None
-
-
-def get_table_data(
-    table: Table,
-) -> tuple[Header, Body]:
-    header_row_range = table.header_row_range
-    data_body_range = table.data_body_range
-
-    if header_row_range is None:
-        return (), ()
-
-    header_values = header_row_range.options(ndim=1).value
-    headers = tuple(str(v) for v in header_values)
-
-    if data_body_range is None:
-        return headers, ()
-
-    body_values = data_body_range.options(ndim=2).value
-    body = tuple(tuple(row) for row in body_values)
-
-    return headers, body
-
-
-_DIR_COMPONENTS = {
-    "X",
-    "Y",
-    "Z",
-    "XX",
-    "XY",
-    "XZ",
-    "YX",
-    "YY",
-    "YZ",
-    "ZX",
-    "ZY",
-    "ZZ",
-}
-
-
-def _normalize_header_key(header: Any) -> str:
-    """Normalize an Excel column header to snake_case.
-
-    Rule: everything is lower-case except direction/tensor components,
-    which stay uppercase (X, Y, Z, XX, XY, XZ, ...).
-    """
-
-    s = str(header).strip()
-    if not s:
-        return s
-
-    raw_tokens = [t for t in s.split("_") if t]
-
-    out: list[str] = []
-    for t in raw_tokens:
-        tu = t.upper()
-        if tu in _DIR_COMPONENTS:
-            out.append(tu)
-        else:
-            out.append(t.lower())
-
-    return "_".join(out)
-
-
-def _validate_header_key(header: Any) -> str:
-    """Validate that an Excel header already follows our naming convention.
-
-    Disallows legacy space-based headers (e.g. "Cell Size X").
-    """
-
-    s = str(header).strip()
-    if not s:
-        raise ValueError("Empty Excel header")
-
-    if " " in s:
-        raise ValueError(
-            f"Excel header {s!r} contains spaces. Use snake_case (e.g. 'cell_size_X')."
-        )
-
-    normalized = _normalize_header_key(s)
-    if s != normalized:
-        raise ValueError(f"Excel header {s!r} is not in canonical form {normalized!r}.")
-
-    return s
-
-
-def _get_simulation_cases(
-    input_header: Header,
-    input_body: Body,
-) -> tuple[SimCase, ...]:
-    cases: list[SimCase] = []
-
-    for i, row in enumerate(input_body):
-        row_values = _map_header_to_row_values(input_header, row)
-
-        cases.append(
-            SimCase(
-                row_idx=i,
-                pre_mesh_spec=PreMeshSpec(
-                    element_type=ElementTypeParams(
-                        model=read_str(row_values, "element_type")
-                    ),
-                    profile=build_profile_params(
-                        element_model=read_str(row_values, "element_type"),
-                        radius=read_float(row_values, "radius_multiplier"),
-                        kappa=read_optional_float(row_values, "kappa"),
-                    ),
-                    geometry=GeometryParams(
-                        cell_name=resolve_cell_name(read_str(row_values, "cell_name")),
-                        size=read_Vector3(row_values, "cell_size"),
-                    ),
-                    meshing=MeshingParams(
-                        max_element_size=read_float(row_values, "max_element_size")
-                    ),
-                ),
-                post_mesh_spec=PostMeshSpec(
-                    material=MaterialParams(
-                        e_mod=read_float(row_values, "elastic_modulus"),
-                        nu=read_float(row_values, "poisson_ratio"),
-                        density=read_float(row_values, "density"),
-                    ),
-                    setup=SetupParams(
-                        sim_type=read_str(row_values, "simulation_type"),
-                        strain=read_float(row_values, "strain"),
-                        n_substeps=read_int(row_values, "substeps"),
-                    ),
-                ),
-            )
-        )
-
-    return tuple(cases)
-
-
-def _map_header_to_row_values(
-    input_header: Header,
-    row: tuple[Any, ...],
-) -> dict[str, Any]:
-    if len(input_header) != len(row):
-        raise ValueError(
-            f"Header and row lengths do not match: {len(input_header)} != {len(row)}"
-        )
-
-    keys = [_validate_header_key(h) for h in input_header]
-
-    if len(set(keys)) != len(keys):
-        dupes = {k for k in keys if keys.count(k) > 1}
-        raise ValueError("Duplicate Excel headers: " + ", ".join(sorted(dupes)))
-
-    return dict(zip(keys, row, strict=True))

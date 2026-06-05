@@ -1,3 +1,6 @@
+#boundary_moment_command.py
+"""Module for boundary moment command functionality in src.post."""
+
 from __future__ import annotations
 
 """Boundary moment postprocessing.

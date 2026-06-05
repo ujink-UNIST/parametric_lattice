@@ -1,4 +1,5 @@
-# sort.py
+#sort.py
+"""Module for sort functionality in src.core.geometric."""
 
 from fractions import Fraction
 from typing import Iterable, Sequence

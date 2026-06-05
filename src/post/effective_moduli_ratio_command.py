@@ -1,3 +1,6 @@
+#effective_moduli_ratio_command.py
+"""Module for effective moduli ratio command functionality in src.post."""
+
 from __future__ import annotations
 
 """Material-normalized effective moduli ratios.

@@ -1,6 +1,7 @@
+#write.py
 """Helpers for writing typed values to Excel tables via xlwings.
 
-Intended counterpart to `custom_io.excel_read`.
+Intended counterpart to `custom_io.excel.read`.
 
 Convention:
 - Columns are snake_case

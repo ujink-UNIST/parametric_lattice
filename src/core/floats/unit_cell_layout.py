@@ -1,5 +1,4 @@
-# unit_cell_layout.py
-
+#unit_cell_layout.py
 """Backwards-compatible re-exports for unit-cell layout array type aliases."""
 
 from __future__ import annotations
