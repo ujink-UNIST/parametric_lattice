@@ -189,7 +189,7 @@ def build_geometry_trim_commands_(
     max_physical_radius = (
         float(profile_params.radius) * max_radius_ratio * float(np.min(geometry_params.size))
     )
-    trim_offset = max_physical_radius *1.1
+    trim_offset = max_physical_radius *0.1
 
     cmds: list[str] = list(apdl_block(f"""
 
