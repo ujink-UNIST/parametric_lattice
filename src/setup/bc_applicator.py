@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 
+from core.apdl_block import apdl_section
 from core.apdl_commands import ApdlCommands
-from core.parameters.geometry_params import GeometryParams
 from core.parameters.profile_params import (
     BeamProfileParams,
     ProfileParams,
@@ -57,7 +57,12 @@ def strain_variable_commands(
         "xz",
         "zx",
     )
-    return tuple(f"*SET,e_{key},{values[key]:.10g}" for key in keys)
+    comments = (
+        apdl_section("STRAIN VARIABLES"),
+        "! Initialize all engineering strain components to zero.",
+        "! The selected simulation type then activates only the required terms.",
+    )
+    return comments + tuple(f"*SET,e_{key},{values[key]:.10g}" for key in keys)
 
 
 def apply_displacement_loop_commands(
@@ -66,6 +71,10 @@ def apply_displacement_loop_commands(
     ce_commands: ApdlCommands = tuple(f"D,_NID_BC_,{dof},0" for dof in ce_dofs)
 
     return (
+        apdl_section("AFFINE BOUNDARY DISPLACEMENTS"),
+        "! Select every node on the unit-cell boundary.",
+        "! For each node, compute u = E*x from the strain variables above.",
+        "! Beam models additionally constrain boundary rotations to suppress rigid spin.",
         "CMSEL,S,BOUNDARY_NODES",
         f"*GET,_NCOUNT_BC_,NODE,0,COUNT",
         f"*DO,_I_BC_,1,_NCOUNT_BC_",
@@ -103,7 +112,8 @@ def bc_commands(
         )
 
     return (
-        strain_variable_commands(setup_params)
+        (apdl_section("STATIC BOUNDARY CONDITIONS"),)
+        + strain_variable_commands(setup_params)
         + apply_displacement_loop_commands(ce_dofs)
         + ("ALLSEL,ALL",)
     )

@@ -180,5 +180,4 @@ def export_mesh_cdb(sim_case: SimCase) -> ApdlCommands:
         "",
         apdl_section("EXPORT MESH CDB"),
         f"CDWRITE,GEOM,'{fname}','{_MESH_CDB_EXT}',,'','',BLOCKED",
-        "! --- Append custom metadata to mesh.cdb ---",
     ) + append_touch_area

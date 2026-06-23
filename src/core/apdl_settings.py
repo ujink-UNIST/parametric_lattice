@@ -13,7 +13,7 @@ GpuMode = Literal["off", "on"]
 
 @dataclass(frozen=True)
 class ApdlSettings:
-    # 기본 실행 설정
+    # Default execution settings
     jobname: str = "file"
     # NOTE: Avoid hard-coding the Windows username. Use the current user's home directory.
     # Default: ~/Documents/ANSYS workdir
@@ -21,7 +21,7 @@ class ApdlSettings:
     mode: MapdlMode = "grpc"
     override: bool = True
 
-    # CPU / 메모리
+    # CPU / memory
     nproc: int | None = None
     memory_mb: int | None = None  # MAPDL -m
     database_mb: int | None = None  # MAPDL -db
@@ -29,7 +29,7 @@ class ApdlSettings:
     # GPU
     gpu: GpuMode = "off"
 
-    # 기타
+    # Miscellaneous settings
     additional_switches: tuple[str, ...] = field(
         default_factory=tuple
     )
@@ -72,7 +72,7 @@ class ApdlSettings:
 @dataclass(frozen=True)
 class ApdlRuntimeSettings:
     use_gpu_solver: bool = False
-    solver: str | None = None  # "SPARSE", "PCG", "JCG" 등
+    solver: str | None = None  # e.g. "SPARSE", "PCG", "JCG"
 
     def apply(self, mapdl: Mapdl) -> None:
         if self.solver is not None:

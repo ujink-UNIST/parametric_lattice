@@ -2,8 +2,8 @@
 """Modal-analysis setup command builder."""
 
 from __future__ import annotations
-from typing import Tuple
 
+from core.apdl_block import apdl_section
 from core.apdl_commands import ApdlCommands
 from core.parameters.profile_params import (
     BeamProfileParams,
@@ -22,7 +22,11 @@ def modal_ff_commands() -> ApdlCommands:
 
     Free-free modal analysis applies no displacement constraints.
     """
-    return ()
+    return (
+        apdl_section("FREE-FREE MODAL SETUP"),
+        "! No displacement constraints are applied for free-free modal analysis.",
+        "! Rigid-body modes are expected and should appear near zero frequency.",
+    )
 
 
 def periodic_component_name(face: str) -> str:
@@ -64,7 +68,9 @@ def _face_pair_periodic_commands(
     )
 
     return (
-        f"! Periodic constraints for {positive_cm}/{negative_cm}",
+        apdl_section(f"PERIODIC CONSTRAINTS {axis} FACES"),
+        f"! Pair nodes from {positive_cm} to matching nodes on {negative_cm}.",
+        "! Matching uses the two tangent coordinates on the face pair.",
         f"CMSEL,S,{positive_cm}",
         f"CM,{active_cm},NODE",
         f"*GET,{count_var},NODE,0,COUNT",
@@ -77,8 +83,10 @@ def _face_pair_periodic_commands(
         f"NSEL,R,LOC,{tangent_a},{tangent_a_var}",
         f"NSEL,R,LOC,{tangent_b},{tangent_b_var}",
         f"*GET,{minus_node},NODE,0,NUM,MIN",
+        "! Tie each selected degree of freedom with a constraint equation.",
         *ce_commands,
         f"CMSEL,S,{active_cm}",
+        "! Remove the processed positive-face node from the work component.",
         f"NSEL,U,NODE,,{plus_node}",
         f"CM,{active_cm},NODE",
         "*ENDDO",
@@ -91,7 +99,11 @@ def modal_commands(
 ) -> ApdlCommands:
     """Return periodic boundary-condition commands for modal analysis."""
 
-    cmds: ApdlCommands = ()
+    cmds: ApdlCommands = (
+        apdl_section("PERIODIC MODAL SETUP"),
+        "! Build periodic constraints between opposite faces of the unit cell.",
+        "! Translational DOFs are tied for all models; beam rotations are tied as well.",
+    )
 
     ce_dofs = (
         "UX",

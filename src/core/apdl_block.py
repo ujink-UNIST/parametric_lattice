@@ -30,7 +30,7 @@ def apdl_block(text: str) -> tuple[str, ...]:
 
         is_blank = not line
 
-        # 연속 빈 줄만 제거
+        # Collapse consecutive blank lines.
         if is_blank:
             if previous_blank:
                 continue

@@ -7,7 +7,7 @@ import math
 from typing import List
 import numpy as np
 
-from core.apdl_block import apdl_block
+from core.apdl_block import apdl_section
 from core.apdl_commands import ApdlCommands
 from core.geometric.transform import transform_coords
 from core.parameters.geometry_params import GeometryParams
@@ -70,7 +70,7 @@ def build_volume_meshing_commands_(
 ) -> ApdlCommands:
     if isinstance(profile_params, BeamProfileParams):
         return (
-            ("! --- Beam volume meshing stage ---",)
+            (apdl_section("BEAM VOLUME MESHING"),)
             + _build_beam_line_sizing_commands(
                 unit_cell,
                 geometry_params,
@@ -81,7 +81,7 @@ def build_volume_meshing_commands_(
         )
 
     return (
-        "! --- Solid volume meshing stage ---",
+        apdl_section("SOLID VOLUME MESHING"),
         "ET,1,187",
         "TYPE,1",
         f"AESIZE,ALL,{meshing_params.max_element_size}",

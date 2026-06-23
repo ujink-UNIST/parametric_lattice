@@ -1,6 +1,7 @@
 #pipeline.py
 """Module for pipeline functionality in src.solve."""
 
+from core.apdl_block import apdl_section
 from core.apdl_commands import ApdlCommands
 from core.parameters.setup_params import SetupParams
 from solve.outres_command import load_outres_commands_
@@ -23,13 +24,15 @@ def solver_commands(
     sim_type = setup_params.sim_type
     if sim_type in ("modal", "modal_ff"):
         return (
-            load_modal_settings_command_(
+            (apdl_section("SOLUTION PIPELINE"),)
+            + load_modal_settings_command_(
                 n_modes=modal_n_modes
             )
             + load_solve_commands_()
         )
     return (
-        load_static_settings_command_(nlgeom)
+        (apdl_section("SOLUTION PIPELINE"),)
+        + load_static_settings_command_(nlgeom)
         + load_outres_commands_()
         + load_substep_commands(nsubst)
         + load_solve_commands_()

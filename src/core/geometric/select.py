@@ -1,6 +1,7 @@
 #select.py
 """Module for select functionality in src.core.geometric."""
 
+from core.apdl_block import apdl_section
 from core.apdl_commands import ApdlCommands
 from core.floats.vector import Vector3
 from core.geometric.transform import transform_coords
@@ -30,6 +31,9 @@ def get_all_boundary_nodes(
     eps = min(size[0], size[1], size[2]) * 1e-6
 
     return (
+        apdl_section("ALL BOUNDARY NODES"),
+        "! Select nodes on any exterior face of the unit-cell bounding box.",
+        "! Store the combined selection as BOUNDARY_NODES for static BCs.",
         "NSEL,NONE",
         f"NSEL,S,LOC,X,{-half_size[0]-eps:.10g},{-half_size[0]+eps:.10g}",
         f"NSEL,A,LOC,X,{half_size[0]-eps:.10g},{half_size[0]+eps:.10g}",
@@ -176,6 +180,9 @@ def get_all_periodic_nodes(
         )
 
     return (
+        apdl_section("PERIODIC AND FACE NODE COMPONENTS"),
+        "! Create full-face components for periodic constraints.",
+        "! Also create named boundary-face components for downstream selections.",
         "NSEL,NONE",
         # Full periodic faces (no exclusions)
         f"NSEL,S,LOC,X,{-hx-eps:.10g},{-hx+eps:.10g}",
@@ -190,9 +197,7 @@ def get_all_periodic_nodes(
         "CM, PERIODIC_NODES_NZ, NODE",
         f"NSEL,S,LOC,Z,{hz-eps:.10g},{hz+eps:.10g}",
         "CM, PERIODIC_NODES_PZ, NODE",
-        # Boundary face components with explicit constraints on the other axes
-        # (your requested behavior: when selecting i-face, restrict j,k to
-        # [-h-eps, +h+eps]).
+        "! Create boundary-face components with explicit bounds on the other axes.",
         f"NSEL,S,LOC,X,{-hx-eps:.10g},{-hx+eps:.10g}",
         *_restrict_other_axes("Y", hy, "Z", hz),
         "CM, BOUNDARY_FACE_NX, NODE",
