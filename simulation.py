@@ -15,6 +15,7 @@ if str(src_dir) not in sys.path:
 
 from custom_io.excel.excel_spinner import start_cell_spinner
 from custom_io.excel.simulation_actions import (
+    delete_orphaned_results_action,
     open_case_artifacts_action,
     open_geometry_db_action,
     open_lattice_file_action,
@@ -70,6 +71,11 @@ def sub_run_selected_postprocess() -> None:
 def sub_sync_post_cache() -> None:
     book = xw.Book.caller()
     _run_with_spinner(book, lambda: sync_post_cache_action(book))
+
+
+def sub_delete_orphaned_results() -> None:
+    book = xw.Book.caller()
+    _run_with_spinner(book, lambda: delete_orphaned_results_action(book))
 
 
 def sub_open_lattice_file() -> None:

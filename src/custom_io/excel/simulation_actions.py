@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -81,6 +82,42 @@ class ExcelMessenger:
         except Exception:
             print(text)
 
+    def confirm_yes_no(self, text: str) -> bool:
+        """Ask for deletion confirmation.
+
+        Parameters
+        ----------
+        text : str
+            Prompt text to display.
+
+        Returns
+        -------
+        bool
+            True when the user selects Yes.
+        """
+
+        # VBA constants: vbYesNo=4, vbExclamation=48, vbYes=6.
+        try:
+            result = self.book.app.api.Run("MsgBox", str(text), 4 + 48, "parametric_lattice")
+            return int(result) == 6
+        except Exception:
+            pass
+
+        try:
+            import ctypes
+
+            # Win32 constants: MB_YESNO=0x4, MB_ICONEXCLAMATION=0x30, IDYES=6.
+            result = ctypes.windll.user32.MessageBoxW(
+                0,
+                str(text),
+                "parametric_lattice",
+                0x4 | 0x30,
+            )
+            return int(result) == 6
+        except Exception:
+            print(text)
+            return False
+
 
 class Explorer:
     """Small wrapper around Windows Explorer actions."""
@@ -121,6 +158,13 @@ def _first_selected_index(book: xw.Book) -> int | None:
     return int(idxs[0])
 
 
+def _get_input_case_hashes(book: xw.Book) -> set[str]:
+    input_table = find_table(book, "t_input")
+    header, body = get_table_data(input_table)
+    inputs = get_simulation_cases(header, body)
+    return {build_case_hash(sim_case.to_string()) for sim_case in inputs}
+
+
 def _get_case_hash_and_lattice_relpath(
     book: xw.Book,
     row_idx: int,
@@ -136,6 +180,11 @@ def _get_case_hash_and_lattice_relpath(
     case_hash = build_case_hash(sim_case.to_string())
     lattice_rel = sim_case.pre_mesh_spec.geometry.cell_name
     return case_hash, lattice_rel
+
+
+def _is_case_hash_dir(path: Path) -> bool:
+    name = path.name.lower()
+    return path.is_dir() and len(name) == 64 and all(c in "0123456789abcdef" for c in name)
 
 
 def run_selected_action(book: xw.Book) -> None:
@@ -190,6 +239,64 @@ def sync_post_cache_action(book: xw.Book) -> None:
     """
 
     sync_post_cache_to_t_out(book)
+
+
+def delete_orphaned_results_action(book: xw.Book) -> None:
+    """Delete result case directories that are no longer present in ``t_input``.
+
+    Parameters
+    ----------
+    book : xw.Book
+        Calling workbook.
+    """
+
+    msg = ExcelMessenger(book)
+    apply_path_config_from_book(book)
+    cfg = get_path_config()
+
+    active_hashes = _get_input_case_hashes(book)
+    case_root = (cfg.results_root / "case").resolve()
+    if not case_root.exists():
+        msg.info(f"results/case 폴더가 없습니다: {case_root}")
+        return
+
+    orphan_dirs = sorted(
+        p for p in case_root.iterdir() if _is_case_hash_dir(p) and p.name not in active_hashes
+    )
+    if not orphan_dirs:
+        msg.info("삭제할 orphaned 해석결과가 없습니다.")
+        return
+
+    preview = "\n".join(p.name for p in orphan_dirs[:10])
+    more = "" if len(orphan_dirs) <= 10 else f"\n... 외 {len(orphan_dirs) - 10}개"
+    prompt = (
+        f"t_input에 없는 results/case 해석결과 {len(orphan_dirs)}개를 삭제할까요?\n\n"
+        f"대상 폴더:\n{preview}{more}\n\n"
+        "이 작업은 되돌릴 수 없습니다."
+    )
+    if not msg.confirm_yes_no(prompt):
+        msg.info("삭제를 취소했습니다.")
+        return
+
+    deleted = 0
+    failures: list[str] = []
+    for path in orphan_dirs:
+        try:
+            resolved = path.resolve()
+            if resolved.parent != case_root:
+                raise ValueError(f"Unsafe result path: {resolved}")
+            shutil.rmtree(resolved)
+            deleted += 1
+        except Exception as e:
+            failures.append(f"{path.name}: {e}")
+
+    if failures:
+        msg.info(
+            f"orphaned 해석결과 {deleted}개를 삭제했습니다.\n"
+            f"실패 {len(failures)}개:\n" + "\n".join(failures[:5])
+        )
+    else:
+        msg.info(f"orphaned 해석결과 {deleted}개를 삭제했습니다.")
 
 
 def open_lattice_file_action(repo_root: Path, book: xw.Book) -> None:
